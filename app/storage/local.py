@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Union
 import numpy as np
 
@@ -33,7 +33,7 @@ class LocalStorageProvider(BaseStorageProvider):
         incident_id: str,
         camera_id: str
     ) -> str:
-        date_folder = datetime.utcnow().strftime("%Y-%m-%d")
+        date_folder = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         target_dir = os.path.join(self.base_dir, date_folder)
         os.makedirs(target_dir, exist_ok=True)
 
@@ -42,7 +42,13 @@ class LocalStorageProvider(BaseStorageProvider):
 
         if isinstance(image_data, np.ndarray):
             if cv2 is not None:
-                cv2.imwrite(file_path, image_data, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+                # cv2.imencode + python open() гарантирует корректную запись в пути с кириллицей на Windows
+                is_success, buf = cv2.imencode(".jpg", image_data, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+                if is_success:
+                    with open(file_path, "wb") as f:
+                        f.write(buf.tobytes())
+                else:
+                    cv2.imwrite(file_path, image_data, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             elif Image is not None:
                 img = Image.fromarray(image_data)
                 img.save(file_path, "JPEG", quality=self.jpeg_quality)
