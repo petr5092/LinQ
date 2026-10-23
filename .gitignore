@@ -17,8 +17,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
+!frontend/src/lib/
 parts/
 sdist/
 var/
@@ -69,3 +70,8 @@ models/tpu/*.tpu
 .coverage
 .pytest_cache/
 htmlcov/
+
+# Frontend build & dependencies
+node_modules/
+frontend/node_modules/
+frontend/dist/

@@ -103,6 +103,11 @@ snapshots_path = BASE_DIR / "storage" / "snapshots"
 snapshots_path.mkdir(parents=True, exist_ok=True)
 app.mount("/static/snapshots", StaticFiles(directory=str(snapshots_path)), name="snapshots")
 
+# Монтирование собранного веб-интерфейса (SPA)
+frontend_dist = BASE_DIR / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/ui", StaticFiles(directory=str(frontend_dist), html=True), name="frontend-ui")
+
 # Подключение маршрутов API
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 # Алиас для прямого вызова /health на корневом уровне (стандарт k8s / docker probes)
@@ -115,7 +120,7 @@ app.include_router(ws_router)
 
 @app.get("/", tags=["Root"])
 def root():
-    return {
+    data = {
         "project": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "status": "online",
@@ -123,3 +128,7 @@ def root():
         "health_url": f"{settings.API_V1_PREFIX}/health",
         "websocket_url": "/ws/events",
     }
+    frontend_dist = BASE_DIR / "frontend" / "dist"
+    if frontend_dist.exists():
+        data["ui_url"] = "/ui"
+    return data
