@@ -6,11 +6,15 @@
 ## Запуск за минуту (без модели и без TPU)
 
 ```bash
-pip install numpy pillow
+pip install -r requirements-linq-safety.txt
 python run.py            # демо: две синтетические камеры со сценарием нарушений
 # открыть http://localhost:8000
-python -m unittest discover -s tests   # 15 тестов
+python -m unittest discover -s tests   # тесты
 ```
+
+Веб-панель по умолчанию доступна только на этом компьютере (`127.0.0.1`). Для запуска
+из корня репозитория скопируйте `linq-safety.env.example` в `.env` только если файл
+`.env` ещё не создан, затем заполните нужные токены. Сервис читает `.env` из корня проекта.
 
 Демо работает на разметке синтетической сцены (`--backend mock`). Это нужно, чтобы проверить
 всю цепочку (трекинг, правила, журнал, интерфейс) до того, как модель собрана для TPU.
@@ -34,7 +38,7 @@ python bench.py --backend linq --model program.tpu --frames 300       # заме
 ## Уведомления в Telegram и VK
 
 Бот работает через long polling: публичный адрес и webhook не нужны. Токены хранятся в `.env`
-(образец — `.env.example`), в код и git они не попадают.
+(образец — `linq-safety.env.example`), в код и git они не попадают.
 
 **Telegram.** Создайте бота у @BotFather (`/newbot`), токен — в `LINQ_TG_TOKEN`, перезапустите `run.py`.
 На вкладке «Уведомления» нажмите «Добавить в группу» (ссылка вида `t.me/<бот>?startgroup=linq`),
@@ -100,7 +104,7 @@ python bench.py --backend linq --model program.tpu --frames 300       # заме
 | `app/store.py` | журнал (SQLite) и зоны (JSON) |
 | `app/server.py` | веб-сервер: REST, SSE, MJPEG, CSV, `/metrics` |
 | `app/notify/` | боты Telegram и VK, подписчики, рассылка с повторами, обновление сообщений по статусу |
-| `web/index.html` | интерфейс: мониторинг, журнал, статистика, разметка зон |
+| `frontend/index.html` | интерфейс: мониторинг, журнал, статистика, разметка зон |
 | `bench.py` | замеры скорости и оценка числа камер на одном ускорителе |
 
 ### Как избегаем ложных тревог

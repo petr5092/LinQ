@@ -12,7 +12,7 @@ from . import config
 from .rules import RULES
 from .store import STATUSES
 
-WEB = os.path.join(config.ROOT, "web")
+WEB = os.path.join(config.ROOT, "frontend")
 APP = {}      # store, hub, zones, cameras, backend — заполняется в serve()
 
 
@@ -207,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "не найдено"})
 
 
-def serve(port, store, hub, zones, cameras, detector, host="0.0.0.0", notifier=None):
+def serve(port, store, hub, zones, cameras, detector, host="127.0.0.1", notifier=None):
     APP.update(notifier=notifier, store=store, hub=hub, zones=zones, cameras=cameras, detector=detector, backend=detector.name)
     srv = ThreadingHTTPServer((host, port), Handler)
     srv.daemon_threads = True

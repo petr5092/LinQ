@@ -262,7 +262,7 @@ def load_env(path=".env"):
 def from_env(events, hub):
     from .telegram import Telegram
     from .vk import VK
-    load_env()
+    load_env(os.path.join(config.ROOT, ".env"))
     n = Notifier(events, hub)
     if os.environ.get("LINQ_TG_TOKEN"):
         n.add_client(Telegram(os.environ["LINQ_TG_TOKEN"], n, os.environ.get("LINQ_TG_API", "https://api.telegram.org")))

@@ -20,6 +20,7 @@ def main():
     ap.add_argument("--model", help="путь к .onnx (onnx) или Программе для TPU (linq)")
     ap.add_argument("--classes", help="имена классов через запятую, если отличаются от app/config.py")
     ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--host", default="127.0.0.1", help="интерфейс веб-панели (по умолчанию только этот компьютер)")
     ap.add_argument("--public-url", help="адрес панели для кнопки «Открыть в панели» в чатах")
     a = ap.parse_args()
 
@@ -45,8 +46,8 @@ def main():
     notifier.start()
     for w in workers:
         w.start()
-    srv = serve(a.port, store, hub, zones, cams, det, notifier=notifier)
-    print("Уведомления:", ", ".join(notifier.clients) or "не настроены (см. .env.example)")
+    srv = serve(a.port, store, hub, zones, cams, det, host=a.host, notifier=notifier)
+    print("Уведомления:", ", ".join(notifier.clients) or "не настроены (см. linq-safety.env.example)")
     print(f"Интерфейс: http://localhost:{a.port}   детектор: {det.name}   камер: {len(cams)}")
     try:
         srv.serve_forever()
