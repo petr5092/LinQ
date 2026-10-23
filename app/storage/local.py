@@ -1,8 +1,17 @@
 import os
-import cv2
 from datetime import datetime
 from typing import Union
 import numpy as np
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 from app.storage.base import BaseStorageProvider
 
@@ -32,7 +41,13 @@ class LocalStorageProvider(BaseStorageProvider):
         file_path = os.path.join(target_dir, filename)
 
         if isinstance(image_data, np.ndarray):
-            cv2.imwrite(file_path, image_data, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            if cv2 is not None:
+                cv2.imwrite(file_path, image_data, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            elif Image is not None:
+                img = Image.fromarray(image_data)
+                img.save(file_path, "JPEG", quality=self.jpeg_quality)
+            else:
+                raise ImportError("Не найдены библиотеки cv2 или PIL для сохранения numpy array")
         elif isinstance(image_data, (bytes, bytearray)):
             with open(file_path, "wb") as f:
                 f.write(image_data)
