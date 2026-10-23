@@ -13,8 +13,9 @@ STATUSES = ("new", "confirmed", "false", "forwarded")
 
 class EventStore:
     def __init__(self, path=None):
-        os.makedirs(config.DATA_DIR, exist_ok=True)
-        self.db = sqlite3.connect(path or os.path.join(config.DATA_DIR, "events.db"),
+        data_dir = os.environ.get("LINQ_DATA", config.DATA_DIR)
+        os.makedirs(data_dir, exist_ok=True)
+        self.db = sqlite3.connect(path or os.path.join(data_dir, "events.db"),
                                   check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.Lock()
@@ -222,7 +223,8 @@ class ZoneStore:
 
     def __init__(self, path=None):
         os.makedirs(config.DATA_DIR, exist_ok=True)
-        self.path = path or os.path.join(config.DATA_DIR, "zones.json")
+        data_dir = os.environ.get("LINQ_DATA", config.DATA_DIR)
+        self.path = path or os.path.join(data_dir, "zones.json")
         self.lock = threading.Lock()
         try:
             with open(self.path, encoding="utf-8") as f:

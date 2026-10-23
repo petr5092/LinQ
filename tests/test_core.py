@@ -122,10 +122,18 @@ class PostprocessTest(unittest.TestCase):
 
 
 class EndToEnd(unittest.TestCase):
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.td.name, "events.db")
+        self.zones_path = os.path.join(self.td.name, "zones.json")
+
+    def tearDown(self):
+        self.td.cleanup()
+
     def test_scenario_gives_one_alert_per_violation(self):
-        zs = store.ZoneStore()
+        zs = store.ZoneStore(self.zones_path)
         zs.set("c", [{"name": "Склад", "points": sources.DEFAULT_ZONE}])
-        st = store.EventStore()
+        st = store.EventStore(self.db_path)
         w = pipeline.CameraWorker("c", sources.SyntheticSource(realtime=False, max_frames=1200),
                                   detector.MockDetector(), st, hub.Hub(), zs)
         evs = []
