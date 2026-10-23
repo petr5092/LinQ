@@ -2,8 +2,17 @@ import io
 import os
 from datetime import datetime
 from typing import Union, Optional
-import cv2
 import numpy as np
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 from app.storage.base import BaseStorageProvider
 
@@ -55,7 +64,7 @@ class S3StorageProvider(BaseStorageProvider):
         except Exception:
             try:
                 self.client.create_bucket(Bucket=self.bucket_name)
-            except Exception as e:
+            except Exception:
                 # В облаках бакет может уже существовать с ограниченными правами HeadBucket
                 pass
 
@@ -69,10 +78,18 @@ class S3StorageProvider(BaseStorageProvider):
         file_key = f"snapshots/{date_folder}/inc_{incident_id}_{camera_id}.jpg"
 
         if isinstance(image_data, np.ndarray):
-            success, buffer = cv2.imencode(".jpg", image_data, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
-            if not success:
-                raise ValueError("Не удалось закодировать кадр в JPEG")
-            data_bytes = buffer.tobytes()
+            if cv2 is not None:
+                success, buffer = cv2.imencode(".jpg", image_data, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+                if not success:
+                    raise ValueError("Не удалось закодировать кадр в JPEG через cv2")
+                data_bytes = buffer.tobytes()
+            elif Image is not None:
+                buf = io.BytesIO()
+                img = Image.fromarray(image_data)
+                img.save(buf, format="JPEG", quality=self.jpeg_quality)
+                data_bytes = buf.getvalue()
+            else:
+                raise ImportError("Не найдены cv2 или PIL для кодирования изображения")
         elif isinstance(image_data, (bytes, bytearray)):
             data_bytes = image_data
         else:
