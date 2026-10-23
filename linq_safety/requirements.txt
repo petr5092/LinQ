@@ -1,0 +1,6 @@
+numpy
+pillow
+# для backend onnx:
+onnxruntime
+# для видеофайлов и RTSP:
+opencv-python-headless
