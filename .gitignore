@@ -45,6 +45,8 @@ slides/
 linq_resources/
 *.zip
 *.log
+*.log.*
+data/
 
 # Runtime Storage & Data
 storage/*.sqlite3

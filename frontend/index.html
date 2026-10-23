@@ -58,6 +58,8 @@ a.btn.main{color:#fff}
 h2{font-size:16px;margin:0;font-weight:600}
 .feedhead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
 .feedhead label{margin-left:auto;font-size:13px;color:var(--muted)}
+.feedhead .operator{margin-left:0;display:flex;gap:6px;align-items:center}
+.feedhead .operator input{width:150px;padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:#fff}
 #feed{max-height:calc(100vh - 150px);overflow:auto}
 .ev{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:12px 14px 12px 20px;border-bottom:1px solid var(--line);position:relative}
 .ev::before{content:"";position:absolute;left:0;top:0;bottom:0;width:7px;background:var(--line)}
@@ -141,7 +143,9 @@ td img{height:34px;border-radius:2px;vertical-align:middle}
     <div class="cams" id="cams"></div>
   </div>
   <div class="card">
-    <div class="feedhead"><h2>Нарушения</h2><label><input type="checkbox" id="onlyNew" checked> только непроверенные</label></div>
+    <div class="feedhead"><h2>Нарушения</h2>
+      <label class="operator">Оператор <input id="operator" maxlength="120" placeholder="ФИО для журнала"></label>
+      <label><input type="checkbox" id="onlyNew" checked> только непроверенные</label></div>
     <div id="feed"></div>
   </div>
 </section>
@@ -150,6 +154,9 @@ td img{height:34px;border-radius:2px;vertical-align:middle}
   <div class="filters">
     <select id="fType" aria-label="Тип нарушения"></select>
     <select id="fCam" aria-label="Камера"></select>
+    <select id="fWorkshop" aria-label="Участок"></select>
+    <select id="fShift" aria-label="Смена"></select>
+    <input id="fZone" type="search" placeholder="Зона" aria-label="Зона">
     <select id="fStatus" aria-label="Статус"></select>
     <select id="fPeriod" aria-label="Период">
       <option value="0">За всё время</option><option value="3600">Последний час</option>
@@ -158,13 +165,19 @@ td img{height:34px;border-radius:2px;vertical-align:middle}
     <a class="btn" id="csv" href="#">Выгрузить CSV</a>
   </div>
   <div class="card" style="overflow:auto"><table>
-    <thead><tr><th>Время</th><th>Камера</th><th>Зона</th><th>Приоритет</th><th>Нарушение</th><th>Статус</th><th>Задержка</th><th>Кадр</th></tr></thead>
+    <thead><tr><th>Время</th><th>Камера</th><th>Участок</th><th>Смена</th><th>Зона</th><th>Приоритет</th><th>Нарушение</th><th>Статус</th><th>Задержка</th><th>Кадр</th><th>История</th></tr></thead>
     <tbody id="rows"></tbody></table></div>
 </section>
 
 <section id="stat" hidden>
   <div class="kpis" id="kpis"></div>
   <div class="charts" id="charts"></div>
+  <div class="card" style="overflow:auto;margin-top:16px">
+    <div class="feedhead"><h2>Показатели по участкам и сменам</h2></div>
+    <table><thead><tr><th>Участок</th><th>Смена</th><th>Инциденты</th><th>Критические</th>
+      <th>Ожидают реакции</th><th>Подтверждены</th><th>Переданы мастеру</th><th>Ложные</th><th>Доля ложных</th>
+      <th>Средняя реакция</th><th>Частое нарушение</th></tr></thead><tbody id="management"></tbody></table>
+  </div>
 </section>
 <section id="notif" hidden>
   <div class="chs" id="chs"></div>
@@ -289,7 +302,9 @@ function renderFeed(freshId) {
 }
 $("#onlyNew").onchange = () => renderFeed();
 async function setStatus(id, status) {
-  await api(`/api/events/${id}/status`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status})});
+  const by = $("#operator").value.trim();
+  if (!by) { toast("Укажи имя оператора для журнала"); $("#operator").focus(); return; }
+  await api(`/api/events/${id}/status`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({status, by})});
 }
 function upsert(e) {
   const i = events.findIndex(x => x.id === e.id);
@@ -321,7 +336,8 @@ function opts(sel, first, items) {
 }
 function logQuery() {
   const p = new URLSearchParams();
-  for (const [k, el] of [["type","#fType"],["camera","#fCam"],["status","#fStatus"]]) if ($(el).value) p.set(k, $(el).value);
+  for (const [k, el] of [["type","#fType"],["camera","#fCam"],["workshop","#fWorkshop"],
+    ["shift","#fShift"],["zone","#fZone"],["status","#fStatus"]]) if ($(el).value.trim()) p.set(k, $(el).value.trim());
   const per = +$("#fPeriod").value; if (per) p.set("since", Date.now()/1000 - per);
   return p.toString();
 }
@@ -329,12 +345,27 @@ async function loadLog() {
   const q = logQuery(), rows = await api("/api/events?limit=500&" + q);
   $("#csv").href = "/api/events.csv?" + q;
   $("#rows").innerHTML = rows.length ? rows.map(e => `<tr>
-    <td>${fmt(e.ts)}</td><td>${esc(e.camera)}</td><td>${esc(e.zone || "—")}</td>
+    <td>${fmt(e.ts)}</td><td>${esc(e.camera)}</td><td>${esc(e.workshop || "Не назначен")}</td>
+    <td>${esc(e.shift || "Не определена")} ${e.shift_date ? "· " + esc(e.shift_date) : ""}</td><td>${esc(e.zone || "—")}</td>
     <td><span class="priority ${esc(e.severity)}">${PRIORITY[e.severity] || "Обычный"}</span></td>
     <td><span class="sev" style="background:${SEV[e.severity]}"></span>${esc(e.label)}</td>
     <td><span class="tag ${esc(e.status)}">${STATUS[e.status]}</span></td><td>${e.latency_ms} мс</td>
-    <td><a href="/snaps/${esc(e.snapshot)}" target="_blank" rel="noopener"><img src="/snaps/${esc(e.snapshot)}" alt=""></a></td></tr>`).join("")
-    : `<tr><td colspan="8" class="empty">По этим фильтрам событий нет. Расширьте период или сбросьте фильтры.</td></tr>`;
+    <td><a href="/snaps/${esc(e.snapshot)}" target="_blank" rel="noopener"><img src="/snaps/${esc(e.snapshot)}" alt=""></a></td>
+    <td><button class="btn" data-history="${e.id}">История</button></td></tr>`).join("")
+    : `<tr><td colspan="11" class="empty">По этим фильтрам событий нет. Расширьте период или сбросьте фильтры.</td></tr>`;
+  $("#rows").querySelectorAll("[data-history]").forEach(b => b.onclick = () => loadHistory(+b.dataset.history, b.closest("tr")));
+}
+async function loadHistory(id, row) {
+  const existing = row.nextElementSibling;
+  if (existing?.dataset.historyFor === String(id)) { existing.remove(); return; }
+  const history = await api(`/api/events/${id}/history`);
+  const detail = document.createElement("tr");
+  detail.dataset.historyFor = String(id);
+  const items = history.length ? history.map(h =>
+    `<div>${fmt(h.changed_ts)} · ${esc(h.actor)}: ${esc(STATUS[h.old_status] || h.old_status)} → ${esc(STATUS[h.new_status] || h.new_status)}</div>`
+  ).join("") : "История изменений статуса пока пуста.";
+  detail.innerHTML = `<td colspan="11" class="meta">${items}</td>`;
+  row.after(detail);
 }
 
 /* ---------- дашборд ---------- */
@@ -377,8 +408,14 @@ async function loadStats() {
     `<button data-p="${k}" aria-pressed="${k===period}">${t}</button>`).join("")}</div>`
     + kp.map(([v,t]) => `<div class="card kpi"><b>${v}</b><span>${t}</span></div>`).join("");
   $("#kpis").querySelectorAll("[data-p]").forEach(b => b.onclick = () => { period = b.dataset.p; loadStats(); });
-  $("#charts").innerHTML = timeline(d) + heatmap(d.heatmap) + bars("По типам", d.by_type, typeLabel) + bars("По камерам", d.by_camera)
+  $("#charts").innerHTML = timeline(d) + heatmap(d.heatmap) + bars("По типам", d.by_type, typeLabel)
+    + bars("По камерам", d.by_camera) + bars("По участкам", d.by_workshop) + bars("По сменам", d.by_shift)
     + bars("По зонам", d.by_zone) + bars("По статусам", d.by_status, k => STATUS[k] || k);
+  $("#management").innerHTML = d.management.length ? d.management.map(g => `<tr>
+    <td>${esc(g.workshop)}</td><td>${esc(g.shift)}</td><td>${g.events}</td><td>${g.critical}</td>
+    <td>${g.pending}</td><td>${g.confirmed}</td><td>${g.forwarded}</td><td>${g.false}</td><td>${pc(g.false_rate)}</td>
+    <td>${dur(g.reaction_s_avg)}</td><td>${esc(g.top_type ? typeLabel(g.top_type) : "—")}</td></tr>`).join("")
+    : `<tr><td colspan="11" class="empty">За выбранный период событий нет.</td></tr>`;
 }
 
 /* ---------- уведомления ---------- */
@@ -456,13 +493,19 @@ async function refreshCameraStates() {
 /* ---------- старт ---------- */
 (async () => {
   META = await api("/api/meta");
+  $("#operator").value = localStorage.getItem("linqOperatorName") || "";
+  $("#operator").addEventListener("change", () => localStorage.setItem("linqOperatorName", $("#operator").value.trim()));
   $("#cams").innerHTML = META.cameras.map(c =>
     `<button class="cam" data-id="${esc(c.id)}" aria-pressed="false"><img src="/api/frame/${encodeURIComponent(c.id)}.jpg" alt=""><span>${esc(c.id)}</span><i class="cam-state starting">Запуск</i></button>`).join("");
   document.querySelectorAll(".cam").forEach(b => b.onclick = () => { drawMode(false); pickCam(b.dataset.id); });
   opts("#fType", "Все нарушения", Object.entries(META.types).map(([k,v]) => [k, v.label]));
   opts("#fCam", "Все камеры", META.cameras.map(c => [c.id, c.id]));
+  opts("#fWorkshop", "Все участки", META.workshops.map(w => [w, w]));
+  opts("#fShift", "Все смены", META.shifts.map(s => [s, s]));
   opts("#fStatus", "Любой статус", META.statuses.map(s => [s, STATUS[s]]));
-  ["#fType","#fCam","#fStatus","#fPeriod"].forEach(s => $(s).onchange = loadLog);
+  ["#fType","#fCam","#fWorkshop","#fShift","#fStatus","#fPeriod"].forEach(s => $(s).onchange = loadLog);
+  $("#fZone").onchange = loadLog;
+  $("#fZone").onkeydown = e => { if (e.key === "Enter") loadLog(); };
   events = await api("/api/events?limit=60");
   setInterval(() => document.querySelectorAll(".cam img").forEach(i => i.src = `/api/frame/${i.parentNode.dataset.id}.jpg?` + Date.now()), 2000);
   renderFeed(); pickCam(META.cameras[0].id); live(); perf(); refreshCameraStates();

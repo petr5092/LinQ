@@ -6,6 +6,7 @@ import threading
 import time
 
 from . import config
+from .enterprise import UNASSIGNED_SHIFT
 
 STATUSES = ("new", "confirmed", "false", "forwarded")
 
@@ -20,27 +21,49 @@ class EventStore:
         with self.lock:
             self.db.execute("""CREATE TABLE IF NOT EXISTS events(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, camera TEXT, type TEXT, label TEXT,
-                severity TEXT, zone TEXT, track_id INTEGER, status TEXT, snapshot TEXT, latency_ms REAL)""")
+                severity TEXT, zone TEXT, track_id INTEGER, status TEXT, snapshot TEXT, latency_ms REAL,
+                workshop TEXT, shift TEXT, shift_date TEXT)""")
             self.db.execute("CREATE INDEX IF NOT EXISTS ix_ts ON events(ts)")
             cols = {r[1] for r in self.db.execute("PRAGMA table_info(events)")}
-            for col, typ in (("handled_ts", "REAL"), ("handled_by", "TEXT")):
+            for col, typ in (("handled_ts", "REAL"), ("handled_by", "TEXT"), ("workshop", "TEXT"),
+                             ("shift", "TEXT"), ("shift_date", "TEXT")):
                 if col not in cols:
                     self.db.execute(f"ALTER TABLE events ADD COLUMN {col} {typ}")
+            self.db.executescript("""
+                CREATE TABLE IF NOT EXISTS event_history(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INTEGER NOT NULL,
+                    changed_ts REAL NOT NULL,
+                    actor TEXT NOT NULL,
+                    old_status TEXT NOT NULL,
+                    new_status TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_history_event ON event_history(event_id, id);
+                CREATE TRIGGER IF NOT EXISTS event_history_no_update
+                BEFORE UPDATE ON event_history
+                BEGIN SELECT RAISE(ABORT, 'event history is append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS event_history_no_delete
+                BEFORE DELETE ON event_history
+                BEGIN SELECT RAISE(ABORT, 'event history is append-only'); END;
+            """)
             self.db.commit()
 
     def add(self, ev):
         with self.lock:
             cur = self.db.execute(
-                "INSERT INTO events(ts,camera,type,label,severity,zone,track_id,status,snapshot,latency_ms)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO events(ts,camera,type,label,severity,zone,track_id,status,snapshot,latency_ms,"
+                "workshop,shift,shift_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (ev["ts"], ev["camera"], ev["type"], ev["label"], ev["severity"], ev["zone"],
-                 ev["track_id"], ev["status"], ev["snapshot"], ev["latency_ms"]))
+                 ev["track_id"], ev["status"], ev["snapshot"], ev["latency_ms"],
+                 ev.get("workshop"), ev.get("shift"), ev.get("shift_date")))
             self.db.commit()
             return cur.lastrowid
 
-    def query(self, type=None, camera=None, zone=None, status=None, since=None, until=None, limit=200):
+    def query(self, type=None, camera=None, zone=None, status=None, since=None, until=None, limit=200,
+              workshop=None, shift=None):
         where, args = [], []
-        for col, val in (("type", type), ("camera", camera), ("zone", zone), ("status", status)):
+        for col, val in (("type", type), ("camera", camera), ("zone", zone), ("status", status),
+                         ("workshop", workshop), ("shift", shift)):
             if val:
                 where.append(f"{col}=?")
                 args.append(val)
@@ -58,12 +81,28 @@ class EventStore:
     def set_status(self, eid, status, by=None):
         if status not in STATUSES:
             return None
-        with self.lock:
-            self.db.execute("UPDATE events SET status=?, handled_ts=?, handled_by=? WHERE id=?",
-                            (status, None if status == "new" else time.time(), by, eid))
-            self.db.commit()
+        actor = str(by or "Не указан").strip()[:120] or "Не указан"
+        with self.lock, self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            current = self.db.execute("SELECT status FROM events WHERE id=?", (eid,)).fetchone()
+            if current is None:
+                return None
+            old_status = current["status"]
+            if old_status != status:
+                changed_ts = time.time()
+                self.db.execute("UPDATE events SET status=?, handled_ts=?, handled_by=? WHERE id=?",
+                                (status, None if status == "new" else changed_ts, actor, eid))
+                self.db.execute(
+                    "INSERT INTO event_history(event_id,changed_ts,actor,old_status,new_status) VALUES(?,?,?,?,?)",
+                    (eid, changed_ts, actor, old_status, status))
             r = self.db.execute("SELECT * FROM events WHERE id=?", (eid,)).fetchone()
         return dict(r) if r else None
+
+    def history(self, eid):
+        with self.lock:
+            return [dict(r) for r in self.db.execute(
+                "SELECT id,event_id,changed_ts,actor,old_status,new_status "
+                "FROM event_history WHERE event_id=? ORDER BY id", (eid,)).fetchall()]
 
     def get(self, eid):
         with self.lock:
@@ -73,11 +112,12 @@ class EventStore:
     def stats(self):
         with self.lock:
             rows = [dict(r) for r in self.db.execute("SELECT * FROM events").fetchall()]
-        def count(key):
+        def count(key, fallback=None):
             d = {}
             for r in rows:
-                if r[key]:
-                    d[r[key]] = d.get(r[key], 0) + 1
+                value = r[key] or fallback
+                if value:
+                    d[value] = d.get(value, 0) + 1
             return d
         hours = [0] * 24
         for r in rows:
@@ -102,12 +142,41 @@ class EventStore:
             rows = [dict(r) for r in self.db.execute(sql, args).fetchall()]
         now = time.time()
 
-        def count(key):
+        def count(key, fallback=None):
             d = {}
             for r in rows:
-                if r[key]:
-                    d[r[key]] = d.get(r[key], 0) + 1
+                value = r[key] or fallback
+                if value:
+                    d[value] = d.get(value, 0) + 1
             return d
+
+        management = {}
+        for r in rows:
+            workshop = r["workshop"] or "Не назначен"
+            shift = r["shift"] or UNASSIGNED_SHIFT
+            key = (workshop, shift)
+            group = management.setdefault(key, {
+                "workshop": workshop, "shift": shift, "events": 0, "critical": 0, "pending": 0,
+                "confirmed": 0, "false": 0, "forwarded": 0, "reactions": [], "types": {},
+            })
+            group["events"] += 1
+            group["critical"] += r["severity"] == "critical"
+            group["pending"] += r["status"] == "new"
+            if r["status"] in ("confirmed", "false", "forwarded"):
+                group[r["status"]] += 1
+            if r["handled_ts"] is not None and r["status"] != "new":
+                group["reactions"].append(r["handled_ts"] - r["ts"])
+            group["types"][r["type"]] = group["types"].get(r["type"], 0) + 1
+        management_rows = []
+        for group in management.values():
+            decided = group["confirmed"] + group["false"] + group["forwarded"]
+            reactions = group.pop("reactions")
+            types = group.pop("types")
+            group["false_rate"] = group["false"] / decided if decided else None
+            group["reaction_s_avg"] = sum(reactions) / len(reactions) if reactions else None
+            group["top_type"] = max(types, key=types.get) if types else None
+            management_rows.append(group)
+        management_rows.sort(key=lambda group: (-group["events"], group["workshop"], group["shift"]))
 
         status = count("status")
         real = status.get("confirmed", 0) + status.get("forwarded", 0)
@@ -141,6 +210,9 @@ class EventStore:
                            "handled": len(delays)},
             "by_type": count("type"), "by_camera": count("camera"), "by_zone": count("zone"),
             "by_status": status, "by_severity": count("severity"),
+            "by_workshop": count("workshop", "Не назначен"),
+            "by_shift": count("shift", UNASSIGNED_SHIFT),
+            "management": management_rows,
             "series": {"step_s": step, "buckets": series}, "heatmap": heat,
         }
 

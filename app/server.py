@@ -2,6 +2,7 @@
 import csv
 import io
 import json
+import logging
 import os
 import queue
 import re
@@ -10,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import config
+from .enterprise import EnterpriseConfig
 from .rules import RULES
 from .store import STATUSES
 
@@ -17,6 +19,8 @@ WEB = os.path.join(config.ROOT, "frontend")
 APP = {}      # store, hub, zones, cameras, backend — заполняется в serve()
 CAMERA_STALE_AFTER_S = 10
 CAMERA_START_TIMEOUT_S = 15
+http_logger = logging.getLogger("linq.http")
+_QUIET_PATHS = ("/api/frame/", "/api/perf", "/api/cameras", "/api/live", "/api/stream/")
 
 
 def camera_statuses(hub, cameras, now=None):
@@ -51,6 +55,13 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def log_request(self, code="-", size="-"):
+        path = urlparse(self.path).path
+        if (str(code).startswith("4") or str(code).startswith("5") or self.command != "GET"
+                or not path.startswith(_QUIET_PATHS)):
+            http_logger.info("client=%s method=%s path=%s status=%s bytes=%s",
+                             self.client_address[0], self.command, path, code, size)
+
     # --- вспомогательное
     def _send(self, code, body, ctype="application/json; charset=utf-8", extra=None):
         if not isinstance(body, (bytes, bytearray)):
@@ -74,7 +85,8 @@ class Handler(BaseHTTPRequestHandler):
     def _filters(self, q):
         g = lambda k: (q.get(k) or [None])[0]
         return dict(type=g("type"), camera=g("camera"), zone=g("zone"), status=g("status"),
-                    since=g("since"), until=g("until"), limit=g("limit") or 200)
+                    workshop=g("workshop"), shift=g("shift"), since=g("since"), until=g("until"),
+                    limit=g("limit") or 200)
 
     # --- GET
     def do_GET(self):
@@ -88,21 +100,38 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(204, b"", "image/x-icon")
             if p == "/api/meta":
                 return self._send(200, {
-                    "backend": APP["backend"], "cameras": APP["cameras"], "statuses": STATUSES,
+                    "backend": APP["backend"],
+                    "cameras": [{"id": c["id"], "workshop": c.get("workshop", "Не назначен")}
+                                for c in APP["cameras"]],
+                    "workshops": sorted(set(APP["enterprise"].camera_workshops.values())
+                                        | {c.get("workshop", "Не назначен") for c in APP["cameras"]}),
+                    "shifts": [s["name"] for s in APP["enterprise"].shifts],
+                    "statuses": STATUSES,
                     "types": {k: {"label": r.label, "severity": r.severity} for k, r in RULES.items()}})
             if p == "/api/cameras":
                 return self._send(200, camera_statuses(APP["hub"], APP["cameras"]))
             if p == "/api/events":
                 return self._send(200, APP["store"].query(**self._filters(q)))
+            m = re.fullmatch(r"/api/events/(\d+)/history", p)
+            if m:
+                eid = int(m.group(1))
+                if APP["store"].get(eid) is None:
+                    return self._send(404, {"error": "событие не найдено"})
+                return self._send(200, APP["store"].history(eid))
             if p == "/api/events.csv":
                 rows = APP["store"].query(**{**self._filters(q), "limit": 100000})
                 buf = io.StringIO()
                 w = csv.writer(buf)
-                w.writerow(["id", "время", "камера", "зона", "тип", "важность", "статус", "задержка_мс", "кадр"])
+                w.writerow(["id", "время", "камера", "участок", "смена", "дата_смены", "зона",
+                            "тип", "важность", "статус", "кто_обработал", "время_обработки",
+                            "задержка_мс", "кадр"])
                 import time as _t
                 for r in rows:
                     w.writerow([r["id"], _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(r["ts"])), r["camera"],
-                                r["zone"] or "", r["label"], r["severity"], r["status"], r["latency_ms"], r["snapshot"]])
+                                r["workshop"] or "Не назначен", r["shift"] or "Не определена",
+                                r["shift_date"] or "", r["zone"] or "", r["label"], r["severity"], r["status"],
+                                r["handled_by"] or "", _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(r["handled_ts"]))
+                                if r["handled_ts"] else "", r["latency_ms"], r["snapshot"]])
                 return self._send(200, ("\ufeff" + buf.getvalue()).encode("utf-8"), "text/csv; charset=utf-8",
                                   {"Content-Disposition": 'attachment; filename="events.csv"'})
             if p == "/api/dashboard":
@@ -219,7 +248,8 @@ class Handler(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         m = re.fullmatch(r"/api/events/(\d+)/status", p)
         if m:
-            ev = APP["store"].set_status(int(m.group(1)), self._body().get("status"))
+            body = self._body()
+            ev = APP["store"].set_status(int(m.group(1)), body.get("status"), body.get("by"))
             if not ev:
                 return self._send(400, {"error": "неверный статус или событие"})
             APP["hub"].publish({"kind": "status", "event": ev})
@@ -243,8 +273,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "не найдено"})
 
 
-def serve(port, store, hub, zones, cameras, detector, host="127.0.0.1", notifier=None):
-    APP.update(notifier=notifier, store=store, hub=hub, zones=zones, cameras=cameras, detector=detector, backend=detector.name)
+def serve(port, store, hub, zones, cameras, detector, host="127.0.0.1", notifier=None, enterprise=None):
+    APP.update(notifier=notifier, store=store, hub=hub, zones=zones, cameras=cameras, detector=detector,
+               backend=detector.name, enterprise=enterprise or EnterpriseConfig())
     srv = ThreadingHTTPServer((host, port), Handler)
     srv.daemon_threads = True
     return srv

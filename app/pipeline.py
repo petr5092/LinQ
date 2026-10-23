@@ -1,5 +1,6 @@
 """Конвейер одной камеры: кадр -> детектор -> трекер -> правила -> событие."""
 import io
+import logging
 import os
 import threading
 import time
@@ -7,9 +8,12 @@ import time
 from PIL import Image, ImageDraw
 
 from . import config
+from .enterprise import EnterpriseConfig
 from .engine import Engine
 from .rules import Context
 from .tracker import Tracker
+
+logger = logging.getLogger("linq.camera")
 
 
 def annotate(img, tracks, dets, zones, hot):
@@ -34,10 +38,11 @@ def jpeg(im, q=80):
 
 
 class CameraWorker(threading.Thread):
-    def __init__(self, name, source, detector, store, hub, zones):
+    def __init__(self, name, source, detector, store, hub, zones, enterprise=None):
         super().__init__(daemon=True, name=f"cam-{name}")
         self.cam, self.source, self.detector = name, source, detector
         self.store, self.hub, self.zones = store, hub, zones
+        self.enterprise = enterprise or EnterpriseConfig()
         self.tracker, self.engine = Tracker(), Engine()
         self.fps_ema = self.det_ms = self.lat_ms = 0.0
         self.frames, self._last = 0, None
@@ -46,14 +51,17 @@ class CameraWorker(threading.Thread):
 
     def run(self):
         self.hub.set_camera_state(self.cam, "connecting")
+        logger.info("camera=%s state=connecting", self.cam)
         try:
             for frame in self.source:
                 self.process_frame(frame)
         except Exception as exc:
             self.hub.set_camera_state(self.cam, "error", error=type(exc).__name__)
+            logger.error("camera=%s state=error error_type=%s", self.cam, type(exc).__name__)
             raise
         else:
             self.hub.set_camera_state(self.cam, "stopped")
+            logger.info("camera=%s state=stopped frames=%s", self.cam, self.frames)
 
     def stop(self):
         self.hub.set_camera_state(self.cam, "stopping")
@@ -68,6 +76,8 @@ class CameraWorker(threading.Thread):
         frame_ts = time.time()
         self.frames += 1
         self.hub.set_camera_state(self.cam, "online", last_frame_ts=frame_ts, frames=self.frames, error=None)
+        if self.frames == 1:
+            logger.info("camera=%s state=online", self.cam)
         t0 = time.perf_counter()
         dets = self.detector.detect(frame)
         det_ms = (time.perf_counter() - t0) * 1e3
@@ -96,7 +106,11 @@ class CameraWorker(threading.Thread):
             f.write(jpeg(annotated, 88))
         ev = {"ts": ts, "camera": self.cam, "type": c.type, "label": rule.label, "severity": rule.severity,
               "zone": c.zone, "track_id": c.track_id, "status": "new", "snapshot": snap,
-              "latency_ms": round((time.perf_counter() - frame.wall) * 1e3, 1)}
+              "latency_ms": round((time.perf_counter() - frame.wall) * 1e3, 1),
+              "workshop": self.enterprise.workshop_for(self.cam)}
+        ev["shift"], ev["shift_date"] = self.enterprise.shift_for(ts)
         ev["id"] = self.store.add(ev)
+        logger.info("incident_created id=%s camera=%s type=%s severity=%s",
+                    ev["id"], self.cam, ev["type"], ev["severity"])
         self.hub.publish({"kind": "event", "event": ev})
         return ev

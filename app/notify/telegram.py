@@ -74,7 +74,7 @@ class Telegram:
                     try:
                         self.handle(upd)
                     except ApiError as e:
-                        log("telegram: ошибка обработки:", e)
+                        log("telegram: ошибка обработки:", type(e).__name__)
             except ApiError as e:
                 self.status, self.error = "error", str(e)
                 if e.code == 401:
@@ -158,7 +158,7 @@ class Telegram:
         try:
             self.api("sendMessage", {"chat_id": chat_id, "text": text})
         except ApiError as e:
-            log("telegram: не отправить сообщение:", e)
+            log("telegram: не отправить сообщение:", type(e).__name__)
 
     def caption(self, ev):
         a, b, c = alert_lines(ev)

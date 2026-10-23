@@ -6,7 +6,9 @@ import threading
 
 from app import config, sources
 from app.detector import make_detector
+from app.enterprise import EnterpriseConfig
 from app.hub import Hub
+from app.logging_config import configure_logging, shutdown_logging
 from app.notify.core import Notifier, from_env
 from app.pipeline import CameraWorker
 from app.server import serve
@@ -32,15 +34,19 @@ def main():
     if a.backend != "mock" and not a.model:
         ap.error("для onnx и linq нужен --model")
 
+    logger = configure_logging()
+    logger.info("service_starting backend=%s cameras=%s host=%s port=%s",
+                a.backend, len(specs), a.host, a.port)
     det = make_detector(a.backend, a.model, a.classes.split(",") if a.classes else None)
     store, zones, hub = EventStore(), ZoneStore(), Hub()
+    enterprise = EnterpriseConfig()
     cams, workers = [], []
     for i, spec in enumerate(specs, 1):
         name = f"cam{i}"
         if spec.startswith("synthetic") and not zones.has(name):
             zones.set(name, [{"name": "Зона погрузчика", "points": sources.DEFAULT_ZONE}])
-        w = CameraWorker(name, sources.open_source(spec), det, store, hub, zones)
-        cams.append({"id": name, "source": spec})
+        w = CameraWorker(name, sources.open_source(spec), det, store, hub, zones, enterprise)
+        cams.append({"id": name, "source": spec, "workshop": enterprise.workshop_for(name)})
         workers.append(w)
     notifier = Notifier(store, hub) if a.no_notifications else from_env(store, hub)
     if a.public_url and not a.no_notifications:
@@ -48,12 +54,13 @@ def main():
     notifier.start()
     for w in workers:
         w.start()
-    srv = serve(a.port, store, hub, zones, cams, det, host=a.host, notifier=notifier)
+    srv = serve(a.port, store, hub, zones, cams, det, host=a.host, notifier=notifier, enterprise=enterprise)
     if a.no_notifications:
-        print("Внешние уведомления отключены")
+        logger.info("external_notifications=disabled")
     else:
-        print("Уведомления:", ", ".join(notifier.clients) or "не настроены (см. linq-safety.env.example)")
-    print(f"Интерфейс: http://localhost:{a.port}   детектор: {det.name}   камер: {len(cams)}")
+        logger.info("notification_channels=%s", ",".join(notifier.clients) or "not_configured")
+    logger.info("service_ready url=http://localhost:%s backend=%s cameras=%s",
+                a.port, det.name, len(cams))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -62,6 +69,12 @@ def main():
         notifier.stop()
         for w in workers:
             w.stop()
+        for w in workers:
+            w.join(timeout=5)
+            if w.is_alive():
+                logger.warning("camera=%s did_not_stop_within_timeout", w.cam)
+        logger.info("service_stopped")
+        shutdown_logging()
 
 
 if __name__ == "__main__":

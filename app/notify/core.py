@@ -1,5 +1,6 @@
 """Ядро уведомлений: подписчики (чаты), рассылка, повторы, обновление сообщений по статусу."""
 import html
+import logging
 import os
 import queue
 import sqlite3
@@ -12,10 +13,11 @@ from .netio import ApiError
 SEV = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 SEV_ICON = {"critical": "🚨", "high": "🔶", "medium": "🟡", "low": "⚪"}
 STATUS_TEXT = {"confirmed": "✅ подтверждено", "false": "✖️ ложное срабатывание", "forwarded": "👷 принято в работу"}
+logger = logging.getLogger("linq.notify")
 
 
 def log(*a):
-    print("[notify]", *a, flush=True)
+    logger.info("%s", " ".join(str(value) for value in a))
 
 
 class NotifyStore:
@@ -162,13 +164,13 @@ class Notifier:
 
     def register(self, channel, chat_id, title, kind, by=None):
         sub = self.store.upsert_sub(channel, chat_id, title, kind, by)
-        log(f"{channel}: чат подключён — {title} ({chat_id})")
+        logger.info("subscriber_connected channel=%s kind=%s", channel, kind)
         self.hub.publish({"kind": "notify"})
         return sub
 
     def unregister(self, channel, chat_id):
         self.store.set_active(channel, chat_id, False)
-        log(f"{channel}: чат отключён — {chat_id}")
+        logger.info("subscriber_disconnected channel=%s", channel)
         self.hub.publish({"kind": "notify"})
 
     def summary(self):
@@ -189,7 +191,7 @@ class Notifier:
                 elif msg["kind"] == "status":
                     self.refresh_messages(msg["event"])
             except Exception as e:                      # рассылка не должна падать целиком
-                log("ошибка рассылки:", repr(e))
+                logger.error("notification_dispatch_failed error_type=%s", type(e).__name__)
 
     def deliver(self, ev, only=None, test=False):
         snap = os.path.join(config.SNAP_DIR, ev["snapshot"]) if ev.get("snapshot") else None
@@ -202,6 +204,7 @@ class Notifier:
 
     def _send(self, client, sub, ev, snap):
         err = None
+        err_type = "unknown"
         for attempt in range(3):
             t0 = time.perf_counter()
             try:
@@ -211,13 +214,15 @@ class Notifier:
                 return True
             except ApiError as e:
                 err = str(e)
+                err_type = type(e).__name__
                 if client.is_gone(e):
                     self.store.set_active(client.channel, sub["chat_id"], False)
                     break
                 if attempt < 2:
                     time.sleep(min(e.retry_after or self.retry_delay * (attempt + 1), 30))
         self.store.add_delivery(ev["id"], client.channel, sub["chat_id"], None, None, False, err)
-        log(f"{client.channel}: не доставлено в {sub['chat_id']}: {err}")
+        logger.error("notification_failed event_id=%s channel=%s error_type=%s",
+                     ev["id"], client.channel, err_type)
         return False
 
     def refresh_messages(self, ev):
@@ -227,7 +232,8 @@ class Notifier:
                 try:
                     c.update_alert(d, ev)
                 except ApiError as e:
-                    log(f"{d['channel']}: не обновить сообщение: {e}")
+                    logger.warning("notification_update_failed event_id=%s channel=%s error_type=%s",
+                                   ev["id"], d["channel"], type(e).__name__)
 
     def send_test(self, sub_id=None):
         ev = {"id": 0, "ts": time.time(), "camera": "cam-test", "type": "test", "label": "Тестовое оповещение",
