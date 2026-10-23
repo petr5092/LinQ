@@ -1,0 +1,9 @@
+.env
+data/
+__pycache__/
+*.pyc
+bench_results.json
+*.ovpn
+*.onnx
+*.tpu
+docs/
