@@ -7,6 +7,7 @@ from app.models import Detection
 from app.rules import point_in_poly, Context
 from app.engine import Engine
 from app.tracker import Tracker
+from app.server import camera_statuses
 
 
 def D(cls, box): return Detection(cls, .9, box)
@@ -31,6 +32,30 @@ class GeometryTest(unittest.TestCase):
         sq = [(0, 0), (10, 0), (10, 10), (0, 10)]
         self.assertTrue(point_in_poly((5, 5), sq))
         self.assertFalse(point_in_poly((15, 5), sq))
+
+
+class CameraStatusTest(unittest.TestCase):
+    def test_reports_stale_and_online_cameras(self):
+        h = hub.Hub()
+        h.set_camera_state("cam1", "connecting", started_ts=100)
+        h.set_camera_state("cam2", "online", started_ts=100, last_frame_ts=119, frames=12)
+        h.set_camera_state("cam3", "online", started_ts=100, last_frame_ts=100, frames=2)
+        cameras = [{"id": "cam1", "source": "rtsp://private"},
+                   {"id": "cam2", "source": "synthetic"}, {"id": "cam3", "source": "rtsp://private"}]
+
+        statuses = camera_statuses(h, cameras, now=120)
+        self.assertEqual([c["status"] for c in statuses], ["offline", "online", "offline"])
+        self.assertEqual(statuses[1]["last_frame_age_s"], 1)
+        self.assertNotIn("source", statuses[0])
+
+    def test_preserves_camera_error_state(self):
+        h = hub.Hub()
+        h.set_camera_state("cam1", "error", started_ts=100, error="RuntimeError")
+
+        status = camera_statuses(h, [{"id": "cam1"}], now=200)[0]
+
+        self.assertEqual(status["status"], "error")
+        self.assertEqual(status["error"], "RuntimeError")
 
 
 class EngineTest(unittest.TestCase):

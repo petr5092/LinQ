@@ -41,13 +41,22 @@ class CameraWorker(threading.Thread):
         self.tracker, self.engine = Tracker(), Engine()
         self.fps_ema = self.det_ms = self.lat_ms = 0.0
         self.frames, self._last = 0, None
+        self.hub.set_camera_state(name, "starting", source=source.kind, error=None, last_frame_ts=None)
         os.makedirs(config.SNAP_DIR, exist_ok=True)
 
     def run(self):
-        for frame in self.source:
-            self.process_frame(frame)
+        self.hub.set_camera_state(self.cam, "connecting")
+        try:
+            for frame in self.source:
+                self.process_frame(frame)
+        except Exception as exc:
+            self.hub.set_camera_state(self.cam, "error", error=type(exc).__name__)
+            raise
+        else:
+            self.hub.set_camera_state(self.cam, "stopped")
 
     def stop(self):
+        self.hub.set_camera_state(self.cam, "stopping")
         self.source.stop()
 
     def _zones_px(self, shape):
@@ -56,6 +65,9 @@ class CameraWorker(threading.Thread):
                 for z in self.zones.get(self.cam)]
 
     def process_frame(self, frame):
+        frame_ts = time.time()
+        self.frames += 1
+        self.hub.set_camera_state(self.cam, "online", last_frame_ts=frame_ts, frames=self.frames, error=None)
         t0 = time.perf_counter()
         dets = self.detector.detect(frame)
         det_ms = (time.perf_counter() - t0) * 1e3
@@ -66,7 +78,6 @@ class CameraWorker(threading.Thread):
         events = [self._emit(c, rule, frame, im) for c, rule in fired]
         self.hub.set_frame(self.cam, jpeg(im, 75))
         now = time.perf_counter()
-        self.frames += 1
         if self._last:
             inst = 1.0 / max(1e-6, now - self._last)
             self.fps_ema = inst if not self.fps_ema else 0.9 * self.fps_ema + 0.1 * inst

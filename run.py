@@ -7,7 +7,7 @@ import threading
 from app import config, sources
 from app.detector import make_detector
 from app.hub import Hub
-from app.notify.core import from_env
+from app.notify.core import Notifier, from_env
 from app.pipeline import CameraWorker
 from app.server import serve
 from app.store import EventStore, ZoneStore
@@ -21,6 +21,8 @@ def main():
     ap.add_argument("--classes", help="имена классов через запятую, если отличаются от app/config.py")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--host", default="127.0.0.1", help="интерфейс веб-панели (по умолчанию только этот компьютер)")
+    ap.add_argument("--no-notifications", action="store_true",
+                    help="не загружать токены и отключить внешние каналы уведомлений")
     ap.add_argument("--public-url", help="адрес панели для кнопки «Открыть в панели» в чатах")
     a = ap.parse_args()
 
@@ -40,14 +42,17 @@ def main():
         w = CameraWorker(name, sources.open_source(spec), det, store, hub, zones)
         cams.append({"id": name, "source": spec})
         workers.append(w)
-    notifier = from_env(store, hub)
-    if a.public_url:
+    notifier = Notifier(store, hub) if a.no_notifications else from_env(store, hub)
+    if a.public_url and not a.no_notifications:
         notifier.public_url = a.public_url
     notifier.start()
     for w in workers:
         w.start()
     srv = serve(a.port, store, hub, zones, cams, det, host=a.host, notifier=notifier)
-    print("Уведомления:", ", ".join(notifier.clients) or "не настроены (см. linq-safety.env.example)")
+    if a.no_notifications:
+        print("Внешние уведомления отключены")
+    else:
+        print("Уведомления:", ", ".join(notifier.clients) or "не настроены (см. linq-safety.env.example)")
     print(f"Интерфейс: http://localhost:{a.port}   детектор: {det.name}   камер: {len(cams)}")
     try:
         srv.serve_forever()

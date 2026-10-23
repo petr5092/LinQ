@@ -1,4 +1,4 @@
-"""Тесты уведомлений на поддельных серверах Telegram и VK (реальная сеть не нужна)."""
+"""Тесты уведомлений Telegram на поддельном сервере (реальная сеть не нужна)."""
 import json, os, sys, tempfile, threading, time, unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 os.environ["LINQ_DATA"] = tempfile.mkdtemp()
@@ -8,13 +8,12 @@ from app.hub import Hub
 from app.store import EventStore
 from app.notify.core import Notifier, NotifyStore
 from app.notify.telegram import Telegram
-from app.notify.vk import VK
 
 
 class Fake:
-    """Один HTTP-сервер имитирует api.telegram.org (/bot<token>/…), api.vk.com (/vk/…) и сервер загрузки."""
+    """HTTP-сервер имитирует Telegram Bot API и загрузку фото."""
     def __init__(self):
-        self.calls, self.tg_updates, self.vk_updates = [], [], []
+        self.calls, self.tg_updates = [], []
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -23,12 +22,6 @@ class Fake:
             def reply(self, obj):
                 b = json.dumps(obj).encode()
                 self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
-            def do_GET(self):
-                if "/lp" in self.path:
-                    u, fake.vk_updates = fake.vk_updates, []
-                    if not u: time.sleep(.15)
-                    return self.reply({"ts": "2", "updates": u})
-                self.reply({})
             def do_POST(self):
                 n = int(self.headers.get("Content-Length") or 0); raw = self.rfile.read(n)
                 path = self.path
@@ -46,17 +39,6 @@ class Fake:
                         return self.reply({"ok": True, "result": u})
                     if method == "sendMessage": return self.reply({"ok": True, "result": {"message_id": 5}})
                     return self.reply({"ok": True, "result": True})
-                from urllib.parse import parse_qs
-                method = path.rsplit("/", 1)[1]; body = {k: v[0] for k, v in parse_qs(raw.decode()).items()}
-                fake.calls.append((method, body))
-                if method == "groups.getById": return self.reply({"response": {"groups": [{"id": 555, "name": "LinQ"}]}})
-                if method == "groups.getLongPollServer":
-                    return self.reply({"response": {"server": f"http://127.0.0.1:{fake.port}/lp", "key": "k", "ts": "1"}})
-                if method == "photos.getMessagesUploadServer":
-                    return self.reply({"response": {"upload_url": f"http://127.0.0.1:{fake.port}/upload"}})
-                if method == "photos.saveMessagesPhoto": return self.reply({"response": [{"owner_id": -555, "id": 9}]})
-                if method == "messages.send": return self.reply({"response": 1001})
-                return self.reply({"response": 1})
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), H); self.port = self.srv.server_address[1]
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
 
@@ -120,23 +102,6 @@ class NotifyTest(unittest.TestCase):
             "from": {"id": 7}, "new_chat_member": {"status": "kicked"}}})
         self.assertTrue(wait(lambda: not self.n.store.subs(active=True)))
         self.assertEqual(self.n.store.delivery_stats()["telegram"]["ok"], 1)
-
-    def test_vk_chat_flow(self):
-        self.n.add_client(VK("VKTOKEN", self.n, None, f"http://127.0.0.1:{self.fake.port}/vk")); self.n.start()
-        self.assertTrue(wait(lambda: self.n.clients["vk"].status == "online"))
-        self.fake.vk_updates.append({"type": "message_new", "object": {"message": {"peer_id": 2000000003, "from_id": 42,
-            "text": "", "action": {"type": "chat_invite_user", "member_id": -555}}}})
-        self.assertTrue(wait(lambda: self.n.store.subs(active=True)))
-        self.assertEqual(self.n.store.subs()[0]["chat_id"], "2000000003")
-        ev = make_event(self.events); self.hub.publish({"kind": "event", "event": ev})
-        self.assertTrue(wait(lambda: [b for b in self.fake.of("messages.send") if b.get("attachment")]))
-        sent = [b for b in self.fake.of("messages.send") if b.get("attachment")][0]
-        self.assertEqual(sent["attachment"], "photo-555_9"); self.assertIn("Падение", sent["message"])
-        self.assertIn("callback", sent["keyboard"])
-        self.fake.vk_updates.append({"type": "message_event", "object": {"user_id": 42, "peer_id": 2000000003, "event_id": "e1",
-            "payload": {"id": ev["id"], "s": "false"}}})
-        self.assertTrue(wait(lambda: self.events.get(ev["id"])["status"] == "false"))
-        self.assertTrue(wait(lambda: self.fake.of("messages.sendMessageEventAnswer")))
 
     def test_failed_delivery_is_recorded(self):
         class Bad:

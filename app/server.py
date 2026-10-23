@@ -5,6 +5,7 @@ import json
 import os
 import queue
 import re
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -14,6 +15,34 @@ from .store import STATUSES
 
 WEB = os.path.join(config.ROOT, "frontend")
 APP = {}      # store, hub, zones, cameras, backend — заполняется в serve()
+CAMERA_STALE_AFTER_S = 10
+CAMERA_START_TIMEOUT_S = 15
+
+
+def camera_statuses(hub, cameras, now=None):
+    now = time.time() if now is None else now
+    states = hub.get_camera_states()
+    result = []
+    for camera in cameras:
+        state = states.get(camera["id"], {})
+        status = state.get("status", "starting")
+        last_frame_ts = state.get("last_frame_ts")
+        age = max(0, now - last_frame_ts) if last_frame_ts is not None else None
+        started_ts = state.get("started_ts", now)
+        if status not in ("error", "stopped", "stopping"):
+            if age is not None and age > CAMERA_STALE_AFTER_S:
+                status = "offline"
+            elif age is None and now - started_ts > CAMERA_START_TIMEOUT_S:
+                status = "offline"
+        result.append({
+            "id": camera["id"],
+            "status": status,
+            "last_frame_ts": last_frame_ts,
+            "last_frame_age_s": round(age, 1) if age is not None else None,
+            "frames": state.get("frames", 0),
+            "error": state.get("error"),
+        })
+    return result
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -61,6 +90,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {
                     "backend": APP["backend"], "cameras": APP["cameras"], "statuses": STATUSES,
                     "types": {k: {"label": r.label, "severity": r.severity} for k, r in RULES.items()}})
+            if p == "/api/cameras":
+                return self._send(200, camera_statuses(APP["hub"], APP["cameras"]))
             if p == "/api/events":
                 return self._send(200, APP["store"].query(**self._filters(q)))
             if p == "/api/events.csv":
@@ -81,6 +112,7 @@ class Handler(BaseHTTPRequestHandler):
                 n = APP.get("notifier")
                 d["notifications"] = n.store.delivery_stats() if n else {}
                 d["perf"] = APP["hub"].perf
+                d["cameras"] = camera_statuses(APP["hub"], APP["cameras"])
                 return self._send(200, d)
             if p == "/metrics":
                 return self._send(200, self._metrics().encode(), "text/plain; version=0.0.4; charset=utf-8")
@@ -91,7 +123,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, APP["store"].stats())
             if p == "/api/perf":
                 return self._send(200, {"backend": APP["backend"], "cameras": APP["hub"].perf,
-                                        "detector": APP["detector"].last})
+                                        "detector": APP["detector"].last,
+                                        "camera_statuses": camera_statuses(APP["hub"], APP["cameras"])})
             m = re.fullmatch(r"/api/zones/([\w\-]+)", p)
             if m:
                 return self._send(200, APP["zones"].get(m.group(1)))
@@ -132,6 +165,9 @@ class Handler(BaseHTTPRequestHandler):
                 "# TYPE linq_events_false_total counter", f"linq_events_false_total {d['by_status'].get('false', 0)}"]
         if d["reaction_s"]["avg"] is not None:
             out += ["# TYPE linq_reaction_seconds_avg gauge", f"linq_reaction_seconds_avg {d['reaction_s']['avg']:.2f}"]
+        out.append("# TYPE linq_camera_online gauge")
+        out += [f'linq_camera_online{{camera="{esc(c["id"])}"}} {int(c["status"] == "online")}'
+                for c in camera_statuses(hub, APP["cameras"])]
         for cam, p in hub.perf.items():
             out += [f'linq_camera_fps{{camera="{esc(cam)}"}} {p["fps"]}',
                     f'linq_camera_detect_ms{{camera="{esc(cam)}"}} {p["detect_ms"]}',

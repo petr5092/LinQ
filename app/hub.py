@@ -1,6 +1,7 @@
 """Раздача данных веб-клиентам: поток оповещений (SSE), кадры (MJPEG), показатели."""
 import queue
 import threading
+import time
 
 
 class Hub:
@@ -8,6 +9,17 @@ class Hub:
         self.subs, self.lock = set(), threading.Lock()
         self.frames, self.cond = {}, threading.Condition()
         self.perf = {}
+        self.camera_state, self.state_lock = {}, threading.Lock()
+
+    def set_camera_state(self, cam, status, **details):
+        now = time.time()
+        with self.state_lock:
+            state = self.camera_state.setdefault(cam, {"started_ts": now, "frames": 0})
+            state.update(status=status, updated_ts=now, **details)
+
+    def get_camera_states(self):
+        with self.state_lock:
+            return {cam: dict(state) for cam, state in self.camera_state.items()}
 
     def subscribe(self):
         q = queue.Queue(maxsize=200)
