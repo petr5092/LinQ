@@ -1,0 +1,982 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@font-face {
+  font-family: "Roboto Flex";
+  src: url("/fonts/roboto-flex.woff2") format("woff2");
+  font-weight: 100 1000;
+  font-stretch: 25% 151%;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-border-subtle: var(--border-subtle);
+  --color-input-surface: var(--input-surface);
+  --color-input-accent-surface: var(--input-accent-surface);
+  --color-input-field: var(--input-field);
+  --color-calendar-surface: var(--calendar-surface);
+  --color-calendar-accent: var(--calendar-accent);
+  --color-border-input: var(--border-input);
+  --color-ring-input: var(--ring-input);
+  --color-outline: var(--outline);
+  --color-field-description: var(--field-description);
+  --color-destructive-60: var(--destructive-60);
+  --color-destructive-90: var(--destructive-90);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-card: var(--sidebar-card);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius: 0.5rem;
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 1.75rem;
+  --radius-4xl: 2rem;
+  --font-sans: "Roboto Flex", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 4rem;
+}
+
+::selection {
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+/* ---------------------------------------------------------------------------
+   1. HR VISION LIGHT MODE — :root
+   --------------------------------------------------------------------------- */
+
+:root,
+[data-theme="hr-vision"],
+[data-theme="hr-vision"].light {
+  /* Radius — HR Vision uses 8 px (radius-sm) as the baseline */
+  --radius: 0.5rem;
+
+  /* ── Core surfaces ── */
+  --background: #ffffff;
+  --foreground: #121212;
+
+  /* Card */
+  --card: #f8f8f8;
+  --card-foreground: #121212;
+
+  /* Popover */
+  --popover: #ffffff;
+  --popover-foreground: #121212;
+
+  /* HR-DS / base/primary — HR v2 */
+  --primary: #2072d0;
+  --primary-foreground: #fafafa;
+  --success: #168a5b;
+
+  /* Secondary */
+  --secondary: #f5f5f5;
+  --secondary-foreground: #1c1c1c;
+
+  /* Muted */
+  --muted: #f5f5f5;
+  --muted-foreground: #0000008a;
+  /* black 54% */
+
+  /* Avatar swatches — per-user fill/glow; index picked by hash of the user subject */
+  --avatar-1: #ea580c;
+  --avatar-2: #1d4ed8;
+  --avatar-3: #10b981;
+  --avatar-4: #8d6e63;
+
+  /* Accent */
+  --accent: #0000000a;
+  /* black 4% */
+  --accent-foreground: #1c1c1c;
+
+  /* Destructive */
+  --destructive: #dc2626;
+  /* red-600 */
+  --destructive-foreground: #fef2f2;
+  /* red-50 */
+
+  /* Border & Input */
+  --border: #e5e5e5;
+  --border-subtle: #00000008;
+  /* black 3% */
+  --input: #00000017;
+  /* black 9% */
+
+  /* Focus ring */
+  --ring: #a3a3a3;
+  --ring-offset: var(--background);
+
+  /* Charts — light (orange-600, teal-600, cyan-900, amber-400, amber-500) */
+  --chart-1: #ea580c;
+  --chart-2: #0d9488;
+  --chart-3: #164e63;
+  --chart-4: #fbbf24;
+  --chart-5: #f59e0b;
+
+  /* Sidebar — light */
+  --sidebar: #fafafa;
+  --sidebar-foreground: #000000b2;
+  /* black 70% */
+  --sidebar-card: #ebebeb;
+  --sidebar-primary: #1c1c1c;
+  --sidebar-primary-foreground: #f1f1f1;
+  --sidebar-accent: #0000000a;
+  /* black 4% */
+  --sidebar-accent-foreground: #000000e5;
+  /* black 90% */
+  --sidebar-border: transparent;
+  --sidebar-ring: #a3a3a3;
+
+  /* Typography */
+  --font-sans: "Roboto Flex", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Roboto Flex", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+
+  /* ── HR Vision Mode-Light custom tokens (from Figma) ── */
+
+  /* Alpha scale — white base, useful for overlays / glass surfaces */
+  --alpha-5: #fffffff2;
+  /* white 95% */
+  --alpha-10: #ffffffe5;
+  /* white 90% */
+  --alpha-20: #ffffffcc;
+  /* white 80% */
+  --alpha-30: #ffffffb2;
+  /* white 70% */
+  --alpha-40: #ffffff99;
+  /* white 60% */
+  --alpha-50: #ffffff80;
+  /* white 50% */
+  --alpha-60: #ffffff66;
+  /* white 40% */
+  --alpha-70: #ffffff4d;
+  /* white 30% */
+  --alpha-80: #ffffff33;
+  /* white 20% */
+  --alpha-90: #ffffff1a;
+  /* white 10% */
+
+  /* Destructive alpha variants — light (red-600 base) */
+  --destructive-20: #dc262633;
+  /* red-600 20% */
+  --destructive-40: #dc262666;
+  /* red-600 40% */
+  /* Light resolves the 60/70/90 slots to plain destructive (per Figma Light mode) */
+  --destructive-60: var(--destructive);
+  --destructive-70: var(--destructive);
+  --destructive-90: var(--destructive);
+
+  /* Outline tokens — light (neutral-400 base #A3A3A3) */
+  --outline: #a3a3a380;
+  /* neutral-400 50% */
+  --outline-10: #a3a3a31a;
+  /* neutral-400 10% */
+
+  /* Background & primary tint overlays */
+  --bg-overlay: #ffffff33;
+  /* white 20% — bg-background/20 */
+  --bg-primary-tint: #1717170d;
+  /* neutral-900 5% — bg-primary/5 */
+
+  /* Component-specific input/accent surface aliases */
+  --input-surface: var(--muted);
+  /* custom-background-dark:input30 → #F5F5F5 */
+  --calendar-surface: #0000000a;
+  /* custom-background-dark:calendar30 — black 4% */
+  --input-accent-surface: var(--muted);
+  /* custom-accent-dark:input50 → #F5F5F5 */
+  --calendar-accent: #00000014;
+  /* custom-accent-dark:calendar50 — black 8% */
+  --input-field: var(--muted);
+  /* custom-input-dark:input80 → #F5F5F5 */
+
+  /* Border/ring aliases resolving to base */
+  --border-input: var(--border);
+  /* custom-border-dark:input-dark → base-border */
+  --ring-input: var(--ring);
+  /* custom-ring-dark → base-ring */
+
+  /* Field component — description text color */
+  --field-description: var(--muted-foreground);
+
+  /* Blue accent alias — light uses blue-500 */
+  --blue-accent: #3b82f6;
+  /* tailwind blue-500 */
+
+  /* Survey banner deep indigo — used for quota / feedback prompts */
+  --bg-survey-accent: #2c3ad5;
+
+  /* Scrollbars — track/thumb follow hr-vision --muted / --muted-foreground / --background */
+  --scrollbar-track: color-mix(in oklch, var(--muted) 88%, var(--background));
+  --scrollbar-thumb: color-mix(in oklch, var(--muted-foreground) 34%, var(--muted));
+  --scrollbar-thumb-hover: color-mix(in oklch, var(--muted-foreground) 52%, var(--muted));
+}
+
+/* ---------------------------------------------------------------------------
+   2. HR VISION DARK MODE — .dark
+   --------------------------------------------------------------------------- */
+
+[data-theme="hr-vision"].dark {
+  /* ── Core surfaces ── */
+  --background: #131314;
+  --foreground: #f1f1f1;
+
+  /* Card */
+  --card: #19191a;
+  --card-foreground: #e7e7e7;
+
+  /* Popover */
+  --popover: #222222;
+  --popover-foreground: #f1f1f1;
+
+  /* HR-DS / base/primary — same blue in both modes */
+  --primary: #2072d0;
+  --primary-foreground: #fafafa;
+  --success: #35c98a;
+
+  /* Secondary */
+  --secondary: #ffffff1a;
+  /* white 10% */
+  --secondary-foreground: #e7e7e7;
+
+  /* Muted */
+  --muted: #262626;
+  --muted-foreground: #ffffff8a;
+  /* white 54% */
+
+  /* Accent */
+  --accent: #404040;
+  --accent-foreground: #fafafa;
+
+  /* Destructive */
+  --destructive: #ef4444;
+  /* base/destructive; component fill uses --destructive-60 separately */
+  --destructive-foreground: #fef2f2;
+  /* red-50 */
+
+  /* Border & Input — dark uses white alpha values */
+  --border: #ffffff17;
+  /* white 9% */
+  --border-subtle: #ffffff08;
+  /* white 3% */
+  --input: #ffffff17;
+  /* white 9% */
+
+  /* Focus ring */
+  --ring: #737373;
+
+  /* Charts — dark (blue-700, emerald-500, amber-500, purple-500, rose-500) */
+  --chart-1: #1d4ed8;
+  --chart-2: #10b981;
+  --chart-3: #f59e0b;
+  --chart-4: #a855f7;
+  --chart-5: #f43f5e;
+
+  /* Sidebar — dark */
+  --sidebar: #0e0e0e;
+  --sidebar-foreground: #ffffffb8;
+  /* white 72% */
+  --sidebar-card: #2e2f31;
+  --sidebar-primary: #ffffffeb;
+  /* white 92% */
+  --sidebar-primary-foreground: #191919;
+  --sidebar-accent: #ffffff0a;
+  /* white 4% */
+  --sidebar-accent-foreground: #ffffffe5;
+  /* white 90% */
+  --sidebar-border: transparent;
+  --sidebar-ring: #525252;
+
+  /* ── HR Vision Mode-Dark custom tokens (from Figma) ── */
+
+  /* Alpha scale — dark base (#0A0A0A ≈ neutral-950) */
+  --alpha-5: #0a0a0af2;
+  /* black 95% */
+  --alpha-10: #0a0a0ae5;
+  /* black 90% */
+  --alpha-20: #0a0a0acc;
+  /* black 80% */
+  --alpha-30: #0a0a0ab2;
+  /* black 70% */
+  --alpha-40: #0a0a0a99;
+  /* black 60% */
+  --alpha-50: #0a0a0a80;
+  /* black 50% */
+  --alpha-60: #0a0a0a66;
+  /* black 40% */
+  --alpha-70: #0a0a0a4d;
+  /* black 30% */
+  --alpha-80: #0a0a0a33;
+  /* black 20% */
+  --alpha-90: #0a0a0a1a;
+  /* black 10% */
+
+  /* Destructive alpha variants — dark (red-400 base #F87171) */
+  --destructive-40: #f8717199;
+  /* red-400 60% — maps to destructive\60 in dark */
+  --destructive-60: #f8717199;
+  /* red-400 60% */
+  --destructive-70: #f87171b2;
+  /* red-400 70% */
+  --destructive-90: #f87171e5;
+  /* red-400 90% */
+  --destructive-20: #f8717166;
+  /* red-400 40% — maps to destructive\40 in dark */
+
+  /* Outline tokens — dark (#737373 ≈ neutral-500/600 boundary) */
+  --outline: #73737380;
+  /* neutral-500 50% */
+  --outline-10: #73737333;
+  /* neutral-500 20% */
+
+  /* Background & primary tint overlays */
+  --bg-overlay: #0a0a0a1a;
+  /* black 10% — bg-background/10 */
+  --bg-primary-tint: #ffffff1a;
+  /* white 10% — bg-primary/10 */
+
+  /* Component-specific input/accent surface aliases */
+  --input-surface: var(--muted);
+  /* custom-background-dark:input30 → #262626 */
+  --calendar-surface: #ffffff0a;
+  /* custom-background-dark:calendar30 — white 4% */
+  --input-accent-surface: var(--muted);
+  /* custom-accent-dark:input50 → #262626 */
+  --calendar-accent: #ffffff14;
+  /* custom-accent-dark:calendar50 — white 8% */
+  --input-field: var(--muted);
+  /* custom-input-dark:input80 → #262626 */
+
+  /* Border/ring aliases — dark collapses to input var */
+  --border-input: var(--input);
+  /* custom-border-dark:input-dark */
+  --ring-input: var(--input);
+  /* custom-ring-dark:input-dark   */
+
+  --field-description: var(--muted-foreground);
+
+  /* Blue accent alias — dark uses blue-600 */
+  --blue-accent: #2563eb;
+  /* tailwind blue-600 */
+
+  /* Survey banner deep indigo — same shade in both modes */
+  --bg-survey-accent: #2c3ad5;
+}
+
+/* Component utility styles follow the HR Vision Figma library. */
+
+/* Button paint and interaction states follow the HR DS Button component set. */
+.hr-button-primary {
+  background-color: var(--primary);
+  background-image: url("/assets/hr-button-primary.svg");
+  background-position: center;
+  background-size: 100% 100%;
+  box-shadow:
+    inset 0 0 22.3px rgb(255 255 255 / 20%),
+    inset 0 -7px 36.9px rgb(255 255 255 / 15%);
+}
+
+.hr-button-primary:hover:not(:disabled) {
+  background-image:
+    linear-gradient(90deg, rgb(255 255 255 / 10%), rgb(255 255 255 / 10%)),
+    url("/assets/hr-button-primary.svg");
+}
+
+.hr-button-primary:disabled {
+  background-image: none;
+  box-shadow: none;
+}
+
+.hr-button-secondary {
+  background-color: var(--secondary);
+}
+
+.hr-button-secondary:hover:not(:disabled) {
+  background-image: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 20%),
+    rgb(255 255 255 / 20%)
+  );
+}
+
+.hr-button-outline {
+  background-color: transparent;
+}
+
+.hr-button-outline:hover:not(:disabled) {
+  background-color: var(--input-accent-surface, var(--muted));
+}
+
+.hr-button-ghost,
+.hr-button-link {
+  background-color: transparent;
+}
+
+.hr-button-ghost:hover:not(:disabled) {
+  background-color: var(--accent);
+}
+
+.hr-button-destructive {
+  background-color: var(--destructive-60, var(--destructive));
+}
+
+.hr-button-destructive:hover:not(:disabled) {
+  background-color: var(--destructive-90, var(--destructive));
+}
+
+@layer base {
+  /* ── Reset & body ── */
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  /* Reserve space for the vertical scrollbar so layout does not shift when
+     overflow toggles (e.g. shorter vs taller dashboard views). */
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  /* Firefox + standard track sizing — inner scroll areas inherit theme tokens */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+    border: 2px solid var(--scrollbar-track);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Mobile scrolls like native overlay bars: hidden but scrollable, no gutter
+     (matches the touch designs). Derived from the theme so it can't drift from
+     the max-md utilities that switch the mobile layouts. */
+  @media (width < theme(--breakpoint-md)) {
+    html {
+      scrollbar-gutter: auto;
+    }
+
+    * {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    *::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-variation-settings: "GRAD" 0, "XOPQ" 96, "XTRA" 468, "YOPQ" 79,
+      "YTAS" 750, "YTDE" -203, "YTFI" 738, "YTLC" 514, "YTUC" 712, "wdth" 100;
+  }
+
+  ::selection {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  /* Global interactive cursor defaults */
+  a[href],
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     H1  ·  48px / 48px lh  ·  ExtraBold 800  ·  Roboto Flex
+     Figma node: 468-5645  (desktop)  /  468-5646 (mobile)
+     Mobile breakpoint: 36px / 40px lh
+     ───────────────────────────────────────────────────────────── */
+  h1,
+  .typography-h1 {
+    font-family: var(--font-sans);
+    font-size: 3rem;
+    /* 48px */
+    line-height: 3rem;
+    /* 48px */
+    font-weight: 800;
+    font-style: normal;
+    color: var(--foreground);
+    font-variation-settings:
+      "GRAD" 21,
+      "XOPQ" 96,
+      "XTRA" 513,
+      "YOPQ" 90,
+      "YTAS" 727,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 658,
+      "wdth" 111,
+      "opsz" 36;
+    letter-spacing: 0;
+  }
+
+  @media (max-width: 767px) {
+    h1,
+    .typography-h1 {
+      font-size: 2.25rem;
+      /* 36px */
+      line-height: 2.5rem;
+      /* 40px */
+      font-variation-settings:
+        "GRAD" 21,
+        "XOPQ" 96,
+        "XTRA" 513,
+        "YOPQ" 90,
+        "YTAS" 727,
+        "YTDE" -203,
+        "YTFI" 738,
+        "YTLC" 514,
+        "YTUC" 658,
+        "wdth" 111;
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     H2  ·  30px / 36px lh  ·  SemiBold 600  ·  Roboto Flex
+     Figma node: 26-216
+     Typography base (no underline). Underline is opt-in via `.typography-h2`.
+     ───────────────────────────────────────────────────────────── */
+  h2,
+  .typography-h2 {
+    font-family: var(--font-sans);
+    font-size: 1.875rem;
+    /* 30px */
+    line-height: 2.25rem;
+    /* 36px */
+    font-weight: 600;
+    font-style: normal;
+    color: var(--foreground);
+    font-variation-settings:
+      "GRAD" 21,
+      "XOPQ" 96,
+      "XTRA" 513,
+      "YOPQ" 90,
+      "YTAS" 727,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 658,
+      "wdth" 111,
+      "opsz" 36;
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     H2 underline variant
+     (used when you explicitly want the Figma underline styling)
+     ───────────────────────────────────────────────────────────── */
+  .typography-h2 {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+    /* 8px — spacing/2 */
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     H3  ·  24px / 32px lh  ·  SemiBold 600  ·  Roboto Flex
+     Figma node: 26-225
+     ───────────────────────────────────────────────────────────── */
+  h3,
+  .typography-h3 {
+    font-family: var(--font-sans);
+    font-size: 1.5rem;
+    /* 24px */
+    line-height: 2rem;
+    /* 32px */
+    font-weight: 600;
+    font-style: normal;
+    color: var(--foreground);
+    font-variation-settings:
+      "GRAD" 21,
+      "XOPQ" 96,
+      "XTRA" 513,
+      "YOPQ" 90,
+      "YTAS" 727,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 658,
+      "wdth" 111,
+      "opsz" 36;
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     H4  ·  20px / 28px lh  ·  SemiBold 600  ·  Roboto Flex
+     Figma node: 26-234
+     ───────────────────────────────────────────────────────────── */
+  h4,
+  .typography-h4 {
+    font-family: var(--font-sans);
+    font-size: 1.25rem;
+    /* 20px */
+    line-height: 1.75rem;
+    /* 28px */
+    font-weight: 600;
+    font-style: normal;
+    color: var(--foreground);
+    font-variation-settings:
+      "GRAD" 21,
+      "XOPQ" 96,
+      "XTRA" 513,
+      "YOPQ" 90,
+      "YTAS" 727,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 658,
+      "wdth" 111,
+      "opsz" 36;
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     P (Paragraph)  ·  16px / 24px lh  ·  Regular 400
+     Figma node: 26-239
+     ───────────────────────────────────────────────────────────── */
+  p,
+  .typography-p {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    /* 16px */
+    line-height: 1.5rem;
+    /* 24px */
+    font-weight: 400;
+    font-style: normal;
+    color: var(--foreground);
+    font-variation-settings:
+      "GRAD" 0,
+      "XOPQ" 96,
+      "XTRA" 468,
+      "YOPQ" 79,
+      "YTAS" 750,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 712,
+      "wdth" 100;
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     BLOCKQUOTE  ·  16px / 24px lh  ·  Regular 400  ·  italic
+     Figma node: 26-245
+     Includes: border-left 2px, padding-left 24px
+     ───────────────────────────────────────────────────────────── */
+  blockquote,
+  .typography-blockquote {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    /* 16px */
+    line-height: 1.5rem;
+    /* 24px */
+    font-weight: 400;
+    font-style: italic;
+    color: var(--foreground);
+    border-left: 2px solid var(--border);
+    padding-left: 1.5rem;
+    /* 24px — spacing/6 */
+    margin-top: 1.5rem;
+    /* spacing/6 */
+    font-variation-settings:
+      "GRAD" 0,
+      "XOPQ" 96,
+      "XTRA" 468,
+      "YOPQ" 79,
+      "YTAS" 750,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 712,
+      "wdth" 100;
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     LIST (ul/ol)  ·  16px / 24px lh  ·  Regular 400
+     Figma node: 26-281
+     Includes: list-disc, padding-left 24px, gap 8px between items
+     ───────────────────────────────────────────────────────────── */
+  ul,
+  ol,
+  .typography-list {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    /* 16px */
+    line-height: 1.5rem;
+    /* 24px */
+    font-weight: 400;
+    font-style: normal;
+    color: var(--foreground);
+    list-style-type: disc;
+    padding-left: 1.5rem;
+    /* 24px — spacing/6 */
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+    font-variation-settings:
+      "GRAD" 0,
+      "XOPQ" 96,
+      "XTRA" 468,
+      "YOPQ" 79,
+      "YTAS" 750,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 712,
+      "wdth" 100;
+    letter-spacing: 0;
+  }
+
+  ul li,
+  ol li,
+  .typography-list li {
+    margin-bottom: 0.5rem;
+    /* 8px — spacing/2 */
+  }
+
+  ul li:last-child,
+  ol li:last-child,
+  .typography-list li:last-child {
+    margin-bottom: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     LEAD  ·  20px / 28px lh  ·  Regular 400  ·  muted-foreground
+     Figma node: 26-314
+     ───────────────────────────────────────────────────────────── */
+  .typography-lead {
+    font-family: var(--font-sans);
+    font-size: 1.25rem;
+    /* 20px */
+    line-height: 1.75rem;
+    /* 28px */
+    font-weight: 400;
+    font-style: normal;
+    color: var(--muted-foreground);
+    font-variation-settings:
+      "GRAD" 21,
+      "XOPQ" 96,
+      "XTRA" 513,
+      "YOPQ" 90,
+      "YTAS" 727,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 658,
+      "wdth" 111,
+      "opsz" 36;
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     CODE  ·  16px / 24px lh  ·  Regular 400  ·  JetBrains Mono
+     Figma node: 40-330
+     Block: zinc-900 bg, border, rounded-lg (16px), p-4
+     Inline: styled separately via code:not(pre > code)
+     Exclude Prism/react-syntax-highlighter: <code> lives under <div>, not <pre>
+     ───────────────────────────────────────────────────────────── */
+  pre,
+  .typography-code-block {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    /* 16px */
+    line-height: 1.5rem;
+    /* 24px */
+    font-weight: 400;
+    font-style: normal;
+    color: oklch(1 0 0 / 47%);
+    /* rgba(255,255,255,0.47) — Figma muted code color */
+    background-color: oklch(0.213 0.006 285.9);
+    /* zinc-900 #18181b */
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    /* 16px */
+    padding: 1rem;
+    /* 16px */
+    white-space: pre-wrap;
+  }
+
+  pre strong,
+  .typography-code-block strong,
+  pre .highlight,
+  .typography-code-block .highlight {
+    font-weight: 700;
+    /* Bold for highlighted identifiers */
+    color: oklch(1 0 0);
+    /* white */
+  }
+
+  code:not(pre > code):not(.syntax-code-block),
+  .typography-code-inline {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    /* 14px — inline slightly smaller */
+    line-height: 1.5rem;
+    font-weight: 400;
+    color: var(--foreground);
+    background-color: var(--muted);
+    border-radius: var(--radius-xs);
+    /* 4px */
+    padding: 0.125rem 0.375rem;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     LARGE  ·  18px / 28px lh  ·  SemiBold 600  ·  Roboto Flex
+     Figma node: 26-319
+     ───────────────────────────────────────────────────────────── */
+  .typography-large {
+    font-family: var(--font-sans);
+    font-size: 1.125rem;
+    /* 18px */
+    line-height: 1.75rem;
+    /* 28px */
+    font-weight: 600;
+    font-style: normal;
+    color: var(--foreground);
+    font-variation-settings:
+      "GRAD" 0,
+      "XOPQ" 96,
+      "XTRA" 468,
+      "YOPQ" 79,
+      "YTAS" 750,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 712,
+      "wdth" 100;
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     SMALL  ·  14px / 20px lh  ·  Medium 500  ·  Roboto Flex
+     Figma node: 26-324  ·  color: foreground
+     ───────────────────────────────────────────────────────────── */
+  small,
+  .typography-small {
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    /* 14px */
+    line-height: 1.25rem;
+    /* 20px */
+    font-weight: 500;
+    font-style: normal;
+    color: var(--foreground);
+    font-variation-settings:
+      "GRAD" 0,
+      "XOPQ" 96,
+      "XTRA" 468,
+      "YOPQ" 79,
+      "YTAS" 750,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 712,
+      "wdth" 100;
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+     MUTED  ·  14px / 20px lh  ·  Medium 500  ·  muted-foreground
+     Figma node: 36-56
+     Same specs as Small but uses muted-foreground color
+     ───────────────────────────────────────────────────────────── */
+  .typography-muted {
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    /* 14px */
+    line-height: 1.25rem;
+    /* 20px */
+    font-weight: 500;
+    font-style: normal;
+    color: var(--muted-foreground);
+    font-variation-settings:
+      "GRAD" 0,
+      "XOPQ" 96,
+      "XTRA" 468,
+      "YOPQ" 79,
+      "YTAS" 750,
+      "YTDE" -203,
+      "YTFI" 738,
+      "YTLC" 514,
+      "YTUC" 712,
+      "wdth" 100;
+    letter-spacing: 0;
+  }
+}
