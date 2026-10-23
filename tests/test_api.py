@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 import unittest
 from pathlib import Path
 
@@ -53,6 +54,7 @@ class TestLinQApp(unittest.TestCase):
 
     def test_04_cameras_crud(self):
         """Тестирование CRUD для видеокамер"""
+        cam_id = f"CAM-TEST-{uuid.uuid4().hex[:6]}"
         # 1. Получение списка
         res_list = self.client.get("/api/v1/cameras")
         self.assertEqual(res_list.status_code, 200)
@@ -61,7 +63,7 @@ class TestLinQApp(unittest.TestCase):
 
         # 2. Создание тестовой камеры
         test_cam = {
-            "id": "CAM-TEST-99",
+            "id": cam_id,
             "name": "Тестовая камера для проверки",
             "zone": "Цех № 1",
             "workshop": "Корпус А",
@@ -72,29 +74,30 @@ class TestLinQApp(unittest.TestCase):
         res_create = self.client.post("/api/v1/cameras", json=test_cam)
         self.assertEqual(res_create.status_code, 201)
         created_data = res_create.json()
-        self.assertEqual(created_data["id"], "CAM-TEST-99")
+        self.assertEqual(created_data["id"], cam_id)
 
         # 3. Получение созданной камеры
-        res_get = self.client.get("/api/v1/cameras/CAM-TEST-99")
+        res_get = self.client.get(f"/api/v1/cameras/{cam_id}")
         self.assertEqual(res_get.status_code, 200)
         self.assertEqual(res_get.json()["name"], "Тестовая камера для проверки")
 
         # 4. Обновление (PATCH)
-        res_patch = self.client.patch("/api/v1/cameras/CAM-TEST-99", json={"online": False, "fps": 15.0})
+        res_patch = self.client.patch(f"/api/v1/cameras/{cam_id}", json={"online": False, "fps": 15.0})
         self.assertEqual(res_patch.status_code, 200)
         self.assertFalse(res_patch.json()["online"])
         self.assertEqual(res_patch.json()["fps"], 15.0)
 
         # 5. Удаление (DELETE)
-        res_del = self.client.delete("/api/v1/cameras/CAM-TEST-99")
+        res_del = self.client.delete(f"/api/v1/cameras/{cam_id}")
         self.assertEqual(res_del.status_code, 200)
 
         # 6. Проверка удаления
-        res_check = self.client.get("/api/v1/cameras/CAM-TEST-99")
+        res_check = self.client.get(f"/api/v1/cameras/{cam_id}")
         self.assertEqual(res_check.status_code, 404)
 
     def test_05_incidents_flow(self):
         """Тестирование создания и жизненного цикла инцидента"""
+        inc_id = f"TK-TEST-{uuid.uuid4().hex[:6]}"
         # 1. Список инцидентов
         res_list = self.client.get("/api/v1/incidents?page=1&size=10")
         self.assertEqual(res_list.status_code, 200)
@@ -104,7 +107,7 @@ class TestLinQApp(unittest.TestCase):
 
         # 2. Регистрация нового инцидента
         new_incident = {
-            "id": "TK-TEST-01",
+            "id": inc_id,
             "site_id": "north",
             "camera_id": "CAM-01",
             "zone": "Цех № 1",
@@ -124,17 +127,17 @@ class TestLinQApp(unittest.TestCase):
         res_create = self.client.post("/api/v1/incidents", json=new_incident)
         self.assertEqual(res_create.status_code, 201)
         created = res_create.json()
-        self.assertEqual(created["id"], "TK-TEST-01")
+        self.assertEqual(created["id"], inc_id)
         self.assertEqual(created["employee"]["name"], "Тестовый Рабочий")
         self.assertEqual(created["contact"]["name"], "Тестовый Мастер")
 
         # 3. Перевод в работу: new -> working
-        res_work = self.client.patch("/api/v1/incidents/TK-TEST-01/status", json={"status": "working"})
+        res_work = self.client.patch(f"/api/v1/incidents/{inc_id}/status", json={"status": "working"})
         self.assertEqual(res_work.status_code, 200)
         self.assertEqual(res_work.json()["status"], "working")
 
         # 4. Закрытие инцидента: working -> resolved
-        res_resolve = self.client.patch("/api/v1/incidents/TK-TEST-01/status", json={"status": "resolved"})
+        res_resolve = self.client.patch(f"/api/v1/incidents/{inc_id}/status", json={"status": "resolved"})
         self.assertEqual(res_resolve.status_code, 200)
         self.assertEqual(res_resolve.json()["status"], "resolved")
 
