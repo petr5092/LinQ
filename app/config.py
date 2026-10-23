@@ -31,10 +31,18 @@ class Settings(BaseModel):
         "*",
     ]
 
-    # База данных (SQLite по умолчанию)
+    # База данных (PostgreSQL)
     DATABASE_URL: str = Field(
-        default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./storage/db.sqlite3")
+        default_factory=lambda: os.getenv(
+            "DATABASE_URL",
+            f"postgresql+psycopg2://{os.getenv('POSTGRES_USER', 'postgres')}:{os.getenv('POSTGRES_PASSWORD', 'postgres')}@{os.getenv('POSTGRES_HOST', 'localhost')}:{os.getenv('POSTGRES_PORT', '5432')}/{os.getenv('POSTGRES_DB', 'linq_safety')}"
+        )
     )
+
+    # Параметры пула подключений к БД
+    DB_POOL_SIZE: int = Field(default_factory=lambda: int(os.getenv("DB_POOL_SIZE", "10")))
+    DB_MAX_OVERFLOW: int = Field(default_factory=lambda: int(os.getenv("DB_MAX_OVERFLOW", "20")))
+    DB_POOL_TIMEOUT: int = Field(default_factory=lambda: int(os.getenv("DB_POOL_TIMEOUT", "30")))
 
     # Хранилище стоп-кадров нарушений
     STORAGE_TYPE: str = Field(default_factory=lambda: os.getenv("STORAGE_TYPE", "local").lower())
