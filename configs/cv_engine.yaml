@@ -1,0 +1,56 @@
+# Конфигурация ядра компьютерного зрения LinQ Safety Guard
+# Аппаратное ускорение на отечественных чипах LinQ TPU (H1M)
+
+inference:
+  # Варианты: LINQ_TPU (чип H1M), ONNX_CPU (локальный фоллбэк), MOCK (тестирование)
+  backend: "ONNX_CPU"
+  tpu_model_path: "models/tpu/safety_yolov8_h1m.tpu"
+  onnx_model_path: "models/onnx/safety_yolov8.onnx"
+  input_size: [640, 640]
+  confidence_threshold: 0.35
+  iou_threshold: 0.45
+  device_id: 0
+
+tracking:
+  algorithm: "bytetrack"
+  high_threshold: 0.45
+  low_threshold: 0.15
+  match_threshold_high: 0.75
+  match_threshold_low: 0.50
+  max_lost_frames: 30
+  min_hits_to_confirm: 2
+
+rules:
+  danger_zone:
+    enabled: true
+    default_severity: "CRITICAL"
+  proximity:
+    enabled: true
+    safe_distance_px: 140.0
+    severity: "HIGH"
+  fall_detection:
+    enabled: true
+    aspect_ratio_threshold: 1.15
+    max_speed_px: 2.0
+    min_frames_lying: 12
+    severity: "CRITICAL"
+  ppe_compliance:
+    enabled: true
+    require_helmet: true
+    require_vest: true
+    severity: "HIGH"
+
+deduplication:
+  debounce_frames: 10      # Количество кадров подтверждения нарушения (~0.4 сек)
+  cooldown_seconds: 300.0   # Подавление повторных оповещений на 5 минут
+  resolve_frames: 25        # Кадров отсутствия нарушения для закрытия инцидента
+
+cameras:
+  - camera_id: "camera_workshop_01"
+    name: "Сборочный цех №1"
+    zones:
+      - zone_id: "danger_zone_crane"
+        name: "Зона работы мостового крана"
+        severity: "CRITICAL"
+        forbidden_classes: ["person"]
+        polygon: [[100, 100], [500, 100], [500, 400], [100, 400]]

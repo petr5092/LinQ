@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 82 40" preserveAspectRatio="none">
+  <defs>
+    <radialGradient id="button" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="10" gradientTransform="matrix(0.023563 -7.9444 -3.914 -0.02868 42.649 20)">
+      <stop stop-color="#2072d0" offset="0" />
+      <stop stop-color="#105aaf" offset="0.5" />
+      <stop stop-color="#00428f" offset="1" />
+    </radialGradient>
+  </defs>
+  <rect width="82" height="40" fill="url(#button)" />
+</svg>

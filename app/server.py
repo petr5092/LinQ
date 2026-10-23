@@ -1,4 +1,4 @@
-"""HTTP-сервер на стандартной библиотеке: веб-интерфейс, REST, SSE, MJPEG."""
+﻿"""HTTP-СЃРµСЂРІРµСЂ РЅР° СЃС‚Р°РЅРґР°СЂС‚РЅРѕР№ Р±РёР±Р»РёРѕС‚РµРєРµ: РІРµР±-РёРЅС‚РµСЂС„РµР№СЃ, REST, SSE, MJPEG."""
 import csv
 import io
 import json
@@ -16,7 +16,7 @@ from .rules import RULES
 from .store import STATUSES
 
 WEB = os.path.join(config.ROOT, "frontend")
-APP = {}      # store, hub, zones, cameras, backend — заполняется в serve()
+APP = {}      # store, hub, zones, cameras, backend вЂ” Р·Р°РїРѕР»РЅСЏРµС‚СЃСЏ РІ serve()
 CAMERA_STALE_AFTER_S = 10
 CAMERA_START_TIMEOUT_S = 15
 http_logger = logging.getLogger("linq.http")
@@ -62,7 +62,7 @@ class Handler(BaseHTTPRequestHandler):
             http_logger.info("client=%s method=%s path=%s status=%s bytes=%s",
                              self.client_address[0], self.command, path, code, size)
 
-    # --- вспомогательное
+    # --- РІСЃРїРѕРјРѕРіР°С‚РµР»СЊРЅРѕРµ
     def _send(self, code, body, ctype="application/json; charset=utf-8", extra=None):
         if not isinstance(body, (bytes, bytearray)):
             body = json.dumps(body, ensure_ascii=False).encode()
@@ -101,10 +101,10 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/meta":
                 return self._send(200, {
                     "backend": APP["backend"],
-                    "cameras": [{"id": c["id"], "workshop": c.get("workshop", "Не назначен")}
+                    "cameras": [{"id": c["id"], "workshop": c.get("workshop", "РќРµ РЅР°Р·РЅР°С‡РµРЅ")}
                                 for c in APP["cameras"]],
                     "workshops": sorted(set(APP["enterprise"].camera_workshops.values())
-                                        | {c.get("workshop", "Не назначен") for c in APP["cameras"]}),
+                                        | {c.get("workshop", "РќРµ РЅР°Р·РЅР°С‡РµРЅ") for c in APP["cameras"]}),
                     "shifts": [s["name"] for s in APP["enterprise"].shifts],
                     "statuses": STATUSES,
                     "types": {k: {"label": r.label, "severity": r.severity} for k, r in RULES.items()}})
@@ -116,19 +116,19 @@ class Handler(BaseHTTPRequestHandler):
             if m:
                 eid = int(m.group(1))
                 if APP["store"].get(eid) is None:
-                    return self._send(404, {"error": "событие не найдено"})
+                    return self._send(404, {"error": "СЃРѕР±С‹С‚РёРµ РЅРµ РЅР°Р№РґРµРЅРѕ"})
                 return self._send(200, APP["store"].history(eid))
             if p == "/api/events.csv":
                 rows = APP["store"].query(**{**self._filters(q), "limit": 100000})
                 buf = io.StringIO()
                 w = csv.writer(buf)
-                w.writerow(["id", "время", "камера", "участок", "смена", "дата_смены", "зона",
-                            "тип", "важность", "статус", "кто_обработал", "время_обработки",
-                            "задержка_мс", "кадр"])
+                w.writerow(["id", "РІСЂРµРјСЏ", "РєР°РјРµСЂР°", "СѓС‡Р°СЃС‚РѕРє", "СЃРјРµРЅР°", "РґР°С‚Р°_СЃРјРµРЅС‹", "Р·РѕРЅР°",
+                            "С‚РёРї", "РІР°Р¶РЅРѕСЃС‚СЊ", "СЃС‚Р°С‚СѓСЃ", "РєС‚Рѕ_РѕР±СЂР°Р±РѕС‚Р°Р»", "РІСЂРµРјСЏ_РѕР±СЂР°Р±РѕС‚РєРё",
+                            "Р·Р°РґРµСЂР¶РєР°_РјСЃ", "РєР°РґСЂ"])
                 import time as _t
                 for r in rows:
                     w.writerow([r["id"], _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(r["ts"])), r["camera"],
-                                r["workshop"] or "Не назначен", r["shift"] or "Не определена",
+                                r["workshop"] or "РќРµ РЅР°Р·РЅР°С‡РµРЅ", r["shift"] or "РќРµ РѕРїСЂРµРґРµР»РµРЅР°",
                                 r["shift_date"] or "", r["zone"] or "", r["label"], r["severity"], r["status"],
                                 r["handled_by"] or "", _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(r["handled_ts"]))
                                 if r["handled_ts"] else "", r["latency_ms"], r["snapshot"]])
@@ -162,24 +162,24 @@ class Handler(BaseHTTPRequestHandler):
                 if os.path.isfile(fp):
                     with open(fp, "rb") as f:
                         return self._send(200, f.read(), "image/jpeg")
-                return self._send(404, {"error": "нет файла"})
+                return self._send(404, {"error": "РЅРµС‚ С„Р°Р№Р»Р°"})
             m = re.fullmatch(r"/api/frame/([\w\-]+)\.jpg", p)
             if m:
                 data = APP["hub"].frames.get(m.group(1), (0, b""))[1]
                 if not data:
-                    return self._send(404, {"error": "кадра ещё нет"})
+                    return self._send(404, {"error": "РєР°РґСЂР° РµС‰С‘ РЅРµС‚"})
                 return self._send(200, data, "image/jpeg")
             m = re.fullmatch(r"/api/stream/([\w\-]+)", p)
             if m:
                 return self._mjpeg(m.group(1))
             if p == "/api/live":
                 return self._sse()
-            self._send(404, {"error": "не найдено"})
+            self._send(404, {"error": "РЅРµ РЅР°Р№РґРµРЅРѕ"})
         except (BrokenPipeError, ConnectionResetError):
             pass
 
     def _metrics(self):
-        """Формат Prometheus: подключается к Grafana без доработок."""
+        """Р¤РѕСЂРјР°С‚ Prometheus: РїРѕРґРєР»СЋС‡Р°РµС‚СЃСЏ Рє Grafana Р±РµР· РґРѕСЂР°Р±РѕС‚РѕРє."""
         esc = lambda v: str(v).replace("\\", "\\\\").replace('"', '\\"')
         st, hub, out = APP["store"], APP["hub"], []
         rows = st.query(limit=100000)
@@ -251,7 +251,7 @@ class Handler(BaseHTTPRequestHandler):
             body = self._body()
             ev = APP["store"].set_status(int(m.group(1)), body.get("status"), body.get("by"))
             if not ev:
-                return self._send(400, {"error": "неверный статус или событие"})
+                return self._send(400, {"error": "РЅРµРІРµСЂРЅС‹Р№ СЃС‚Р°С‚СѓСЃ РёР»Рё СЃРѕР±С‹С‚РёРµ"})
             APP["hub"].publish({"kind": "status", "event": ev})
             return self._send(200, ev)
         n = APP.get("notifier")
@@ -270,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             zones = APP["zones"].set(m.group(1), self._body().get("zones", []))
             return self._send(200, zones)
-        self._send(404, {"error": "не найдено"})
+        self._send(404, {"error": "РЅРµ РЅР°Р№РґРµРЅРѕ"})
 
 
 def serve(port, store, hub, zones, cameras, detector, host="127.0.0.1", notifier=None, enterprise=None):

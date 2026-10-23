@@ -17,8 +17,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
+!frontend/src/lib/
 parts/
 sdist/
 var/
@@ -49,6 +50,12 @@ linq_resources/
 data/
 
 # Runtime Storage & Data
+data/*.db
+data/*.sqlite3
+data/*.sqlite
+!data/.gitkeep
+!data/.gitignore
+bench_results.json
 storage/*.sqlite3
 storage/snapshots/*
 !storage/snapshots/.gitkeep
@@ -60,3 +67,13 @@ models/onnx/*.onnx
 models/tpu/*.tpu
 !models/onnx/.gitkeep
 !models/tpu/.gitkeep
+
+# Testing & Coverage
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Frontend build & dependencies
+node_modules/
+frontend/node_modules/
+frontend/dist/

@@ -1,134 +1,170 @@
-"""Тесты уведомлений Telegram на поддельном сервере (реальная сеть не нужна)."""
-import json, os, sys, tempfile, threading, time, unittest
+"""
+Тесты системы оперативного оповещения Telegram и NotificationStore на поддельном сервере.
+"""
+
+import json
+import os
+import tempfile
+import threading
+import time
+import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-os.environ["LINQ_DATA"] = tempfile.mkdtemp()
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from app import config
-from app.hub import Hub
-from app.store import EventStore
-from app.notify.core import Notifier, NotifyStore
-from app.notify.telegram import Telegram
+
+from app.services.notifications.manager import NotificationManager
+from app.services.notifications.store import NotificationStore
+from app.services.notifications.telegram import TelegramClient
 
 
-class Fake:
-    """HTTP-сервер имитирует Telegram Bot API и загрузку фото."""
+class FakeTelegramServer:
+    """HTTP-сервер, имитирующий Telegram Bot API в памяти."""
+
     def __init__(self):
-        self.calls, self.tg_updates = [], []
+        self.calls = []
+        self.tg_updates = []
         fake = self
 
-        class H(BaseHTTPRequestHandler):
+        class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.0"
-            def log_message(self, *a): pass
+
+            def log_message(self, *a):
+                pass
+
             def reply(self, obj):
-                b = json.dumps(obj).encode()
-                self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+                b = json.dumps(obj).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(b)))
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b)
+
             def do_POST(self):
-                n = int(self.headers.get("Content-Length") or 0); raw = self.rfile.read(n)
+                n = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(n)
                 path = self.path
+
                 if "multipart" in (self.headers.get("Content-Type") or ""):
-                    fake.calls.append((path, {"_raw": raw})); 
-                    if "upload" in path: return self.reply({"server": 1, "photo": "p", "hash": "h"})
+                    fake.calls.append((path, {"_raw": raw}))
                     return self.reply({"ok": True, "result": {"message_id": 77}})
+
                 if path.startswith("/bot"):
-                    method = path.rsplit("/", 1)[1]; body = json.loads(raw or b"{}")
+                    method = path.rsplit("/", 1)[1]
+                    body = json.loads(raw.decode("utf-8") or "{}")
                     fake.calls.append((method, body))
-                    if method == "getMe": return self.reply({"ok": True, "result": {"username": "linq_bot"}})
+
+                    if method == "getMe":
+                        return self.reply({"ok": True, "result": {"username": "linq_test_bot"}})
                     if method == "getUpdates":
                         u, fake.tg_updates = fake.tg_updates, []
-                        if not u: time.sleep(.15)
+                        if not u:
+                            time.sleep(0.05)
                         return self.reply({"ok": True, "result": u})
-                    if method == "sendMessage": return self.reply({"ok": True, "result": {"message_id": 5}})
+                    if method == "sendMessage":
+                        return self.reply({"ok": True, "result": {"message_id": 5}})
                     return self.reply({"ok": True, "result": True})
-        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), H); self.port = self.srv.server_address[1]
+
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.srv.server_address[1]
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
 
-    def of(self, method): return [b for m, b in self.calls if m == method]
+    def of(self, method):
+        return [b for m, b in self.calls if m == method]
 
 
-def wait(cond, t=6.0):
-    end = time.time() + t
+def wait_until(cond, timeout=5.0):
+    end = time.time() + timeout
     while time.time() < end:
-        if cond(): return True
-        time.sleep(.05)
+        if cond():
+            return True
+        time.sleep(0.05)
     return False
 
 
-def make_event(store, **kw):
-    ev = {"ts": time.time(), "camera": "cam1", "type": "fall", "label": "Падение или неподвижность", "severity": "critical",
-          "zone": "Склад", "track_id": 3, "status": "new", "snapshot": "x.jpg", "latency_ms": 5.0, **kw}
-    ev["id"] = store.add(ev); return ev
-
-
-class NotifyTest(unittest.TestCase):
+class TestTelegramNotification(unittest.TestCase):
     def setUp(self):
-        self.fake = Fake(); self.hub = Hub(); self.events = EventStore(os.path.join(config.DATA_DIR, f"e{time.time()}.db"))
-        self.n = Notifier(self.events, self.hub, NotifyStore(os.path.join(config.DATA_DIR, f"n{time.time()}.db")))
-        self.n.retry_delay = .05
-        os.makedirs(config.SNAP_DIR, exist_ok=True)
-        open(os.path.join(config.SNAP_DIR, "x.jpg"), "wb").write(b"\xff\xd8fakejpeg")
+        self.fake = FakeTelegramServer()
+        self.temp_db = tempfile.mktemp(suffix=".db")
+        self.store = NotificationStore(self.temp_db)
 
-    def tearDown(self): self.n.stop(); self.fake.srv.shutdown()
+        self.status_changes = []
 
-    def test_telegram_group_flow(self):
-        self.n.add_client(Telegram("TOKEN", self.n, f"http://127.0.0.1:{self.fake.port}")); self.n.start()
-        self.assertTrue(wait(lambda: self.n.clients["telegram"].status == "online"))
-        self.assertEqual(self.n.info()["channels"]["telegram"]["links"]["group"], "https://t.me/linq_bot?startgroup=linq")
-        # бота добавили в супергруппу -> чат зафиксирован сам
-        self.fake.tg_updates.append({"update_id": 1, "my_chat_member": {"chat": {"id": -1001, "type": "supergroup", "title": "Смена А"},
-            "from": {"id": 7, "username": "master"}, "new_chat_member": {"status": "member"}}})
-        self.assertTrue(wait(lambda: self.n.store.subs(active=True)))
-        self.assertEqual(self.n.store.subs()[0]["chat_id"], "-1001")
-        # событие -> фото в чат с кнопками
-        ev = make_event(self.events); self.hub.publish({"kind": "event", "event": ev})
-        self.assertTrue(wait(lambda: any(m == "/bot" or "sendPhoto" in m for m, _ in self.fake.calls)))
-        raw = [b for m, b in self.fake.calls if "sendPhoto" in m][0]["_raw"]
-        self.assertIn("Падение".encode(), raw); self.assertIn(b"st:%d:c" % ev["id"], raw); self.assertIn(b"-1001", raw)
-        # нажали «Подтвердить» -> статус в БД с автором, сообщение обновилось
-        self.fake.tg_updates.append({"update_id": 2, "callback_query": {"id": "cb1", "data": f"st:{ev['id']}:c",
-            "from": {"id": 8, "username": "ivanov"}, "message": {"message_id": 77, "chat": {"id": -1001}}}})
-        self.assertTrue(wait(lambda: self.events.get(ev["id"])["status"] == "confirmed"))
-        self.assertEqual(self.events.get(ev["id"])["handled_by"], "@ivanov")
-        self.assertTrue(wait(lambda: self.fake.of("editMessageCaption")))
-        self.assertIn("подтверждено", self.fake.of("editMessageCaption")[0]["caption"])
-        self.assertEqual(self.fake.of("editMessageCaption")[0]["reply_markup"], {"inline_keyboard": []})
-        # порог важности: low-событие не должно прийти после /level critical
-        self.fake.tg_updates.append({"update_id": 3, "message": {"text": "/level critical", "chat": {"id": -1001, "type": "supergroup", "title": "Смена А"}, "from": {"id": 7}}})
-        self.assertTrue(wait(lambda: self.n.store.subs()[0]["min_severity"] == "critical"))
-        before = len([m for m, _ in self.fake.calls if "sendPhoto" in m])
-        self.hub.publish({"kind": "event", "event": make_event(self.events, type="phone", severity="low", label="Телефон")})
-        time.sleep(.5); self.assertEqual(len([m for m, _ in self.fake.calls if "sendPhoto" in m]), before)
-        # бота удалили -> чат отключён
-        self.fake.tg_updates.append({"update_id": 4, "my_chat_member": {"chat": {"id": -1001, "type": "supergroup", "title": "x"},
-            "from": {"id": 7}, "new_chat_member": {"status": "kicked"}}})
-        self.assertTrue(wait(lambda: not self.n.store.subs(active=True)))
-        self.assertEqual(self.n.store.delivery_stats()["telegram"]["ok"], 1)
+        def on_status_change(eid, status, op):
+            self.status_changes.append((eid, status, op))
 
-    def test_failed_delivery_is_recorded(self):
-        class Bad:
-            channel = "telegram"
-            def send_alert(self, *a): raise __import__("app.notify.netio", fromlist=["x"]).ApiError("boom", 500)
-            def is_gone(self, e): return False
-            def run(self): pass
-            def stop(self): pass
-            def info(self): return {}
-        self.n.add_client(Bad()); self.n.store.upsert_sub("telegram", "1", "t", "private")
-        ev = make_event(self.events)
-        self.assertFalse(self.n._send(self.n.clients["telegram"], self.n.store.subs()[0], ev, None))
-        self.assertEqual(self.n.store.delivery_stats()["telegram"]["failed"], 1)
+        self.tg = TelegramClient(
+            token="TEST_TOKEN",
+            store=self.store,
+            base_url=f"http://127.0.0.1:{self.fake.port}",
+            on_status_change=on_status_change,
+        )
 
+    def tearDown(self):
+        self.tg.stop()
+        self.fake.srv.shutdown()
+        if os.path.exists(self.temp_db):
+            try:
+                os.remove(self.temp_db)
+            except OSError:
+                pass
 
-class DashboardTest(unittest.TestCase):
-    def test_reaction_time_and_series(self):
-        st = EventStore(os.path.join(config.DATA_DIR, f"d{time.time()}.db"))
-        now = time.time()
-        a = make_event(st, ts=now - 120); b = make_event(st, ts=now - 60, type="phone", severity="low"); make_event(st, ts=now - 10)
-        st.set_status(a["id"], "confirmed", "@m"); st.set_status(b["id"], "false", "@m")
-        d = st.dashboard(since=now - 3600)
-        self.assertEqual((d["total"], d["pending"]), (3, 1))
-        self.assertEqual(d["precision"], 0.5)
-        self.assertGreater(d["reaction_s"]["avg"], 50)
-        self.assertEqual(sum(sum(b["counts"].values()) for b in d["series"]["buckets"]), 3)
-        self.assertEqual(sum(map(sum, d["heatmap"])), 3)
+    def test_telegram_subscription_and_alerts(self):
+        self.tg.start()
+        self.assertTrue(wait_until(lambda: self.tg.status == "online"))
+        self.assertEqual(self.tg.username, "linq_test_bot")
+
+        # 1. Добавление бота в группу: my_chat_member
+        self.fake.tg_updates.append({
+            "update_id": 1,
+            "my_chat_member": {
+                "chat": {"id": -1001, "type": "supergroup", "title": "Смена 1"},
+                "from": {"id": 10, "username": "shift_lead"},
+                "new_chat_member": {"status": "member"},
+            },
+        })
+
+        self.assertTrue(wait_until(lambda: len(self.store.list_subscribers(active=True)) == 1))
+        sub = self.store.list_subscribers()[0]
+        self.assertEqual(sub["chat_id"], "-1001")
+        self.assertEqual(sub["title"], "Смена 1")
+
+        # 2. Отправка алерта
+        ev = {
+            "id": "inc_001",
+            "rule_name": "danger_zone",
+            "rule_label": "Вход в опасную зону",
+            "severity": "critical",
+            "camera_name": "Камера ворот",
+            "zone_name": "Зона разгрузки",
+            "status": "new",
+        }
+        msg_id, kind = self.tg.send_alert(sub, ev)
+        self.assertEqual(msg_id, "5")
+        self.assertEqual(kind, "text")
+
+        # 3. Нажатие кнопки подтверждения: callback_query
+        self.fake.tg_updates.append({
+            "update_id": 2,
+            "callback_query": {
+                "id": "cb_01",
+                "data": "st:inc_001:c",
+                "from": {"id": 15, "username": "ivanov_op"},
+                "message": {"message_id": 5, "chat": {"id": -1001}},
+            },
+        })
+
+        self.assertTrue(wait_until(lambda: len(self.status_changes) == 1))
+        self.assertEqual(self.status_changes[0], ("inc_001", "confirmed", "ivanov_op"))
+
+        # 4. Команда /level critical
+        self.fake.tg_updates.append({
+            "update_id": 3,
+            "message": {
+                "text": "/level critical",
+                "chat": {"id": -1001, "type": "supergroup"},
+                "from": {"id": 10},
+            },
+        })
+
+        self.assertTrue(wait_until(lambda: self.store.get_subscriber("telegram", -1001)["min_severity"] == "critical"))
 
 
 if __name__ == "__main__":

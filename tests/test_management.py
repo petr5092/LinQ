@@ -197,5 +197,26 @@ class EventAuditTest(unittest.TestCase):
         self.assertNotIn("query-must-not-be-logged", access_log)
 
 
+
+
+class DashboardTest(unittest.TestCase):
+    def test_reaction_time_and_series(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            st = EventStore(os.path.join(temp_dir, "dashboard.db"))
+            now = time.time()
+            id_a = st.add(event(ts=now - 120))
+            id_b = st.add(event(ts=now - 60, type="phone", severity="low"))
+            st.add(event(ts=now - 10))
+            st.set_status(id_a, "confirmed", "@m")
+            st.set_status(id_b, "false", "@m")
+            d = st.dashboard(since=now - 3600)
+            self.assertEqual((d["total"], d["pending"]), (3, 1))
+            self.assertEqual(d["precision"], 0.5)
+            self.assertGreater(d["reaction_s"]["avg"], 50)
+            self.assertEqual(sum(sum(b["counts"].values()) for b in d["series"]["buckets"]), 3)
+            self.assertEqual(sum(map(sum, d["heatmap"])), 3)
+            st.db.close()
+
+
 if __name__ == "__main__":
     unittest.main()
