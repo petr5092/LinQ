@@ -1,0 +1,1 @@
+"""Тесты проекта LinQ Safety Guard."""
