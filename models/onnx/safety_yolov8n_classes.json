@@ -1,0 +1,19 @@
+{
+  "0": "barricade",
+  "1": "dumpster",
+  "2": "excavator",
+  "3": "gloves",
+  "4": "helmet",
+  "5": "mask",
+  "6": "no_helmet",
+  "7": "no_mask",
+  "8": "no_vest",
+  "9": "person",
+  "10": "safety_net",
+  "11": "safety_shoes",
+  "12": "vest",
+  "13": "dump_truck",
+  "14": "minivan",
+  "15": "truck",
+  "16": "wheel_loader"
+}

@@ -63,6 +63,7 @@ storage/demo_videos/*
 !storage/demo_videos/.gitkeep
 
 # Large models (track via Git LFS or external storage)
+models/checkpoints/
 models/onnx/*.onnx
 models/tpu/*.tpu
 !models/onnx/.gitkeep
@@ -77,3 +78,7 @@ htmlcov/
 node_modules/
 frontend/node_modules/
 frontend/dist/
+
+frontend/public/videos/*
+!frontend/public/videos/.gitkeep
+*.mp4
