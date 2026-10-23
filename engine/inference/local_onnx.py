@@ -132,13 +132,19 @@ class LocalONNXEngine(BaseInferenceEngine):
         else:
             output = raw_output
 
-        output = np.squeeze(output)  # удаляем batch dim: (4+C, 8400) или (8400, 4+C)
+        if output.ndim == 3 and output.shape[0] == 1:
+            output = output[0]
+        elif output.ndim > 2:
+            output = np.squeeze(output)
+
+        if output.ndim == 1:
+            output = np.expand_dims(output, axis=0)
 
         if output.ndim != 2:
             return []
 
         # Приводим к размерности (N, 4 + C), где N — количество кандидатов
-        if output.shape[0] < output.shape[1]:
+        if output.shape[1] < 5 or (len(self.class_names) > 0 and output.shape[0] == 4 + len(self.class_names)):
             output = output.T
 
         num_candidates, num_attrs = output.shape

@@ -27,6 +27,9 @@ class RulesEngine:
     def remove_rule(self, rule_name: str) -> None:
         self.rules.pop(rule_name, None)
 
+    def clear_rules(self) -> None:
+        self.rules.clear()
+
     def get_rule(self, rule_name: str) -> Optional[BaseRule]:
         return self.rules.get(rule_name)
 
@@ -39,11 +42,14 @@ class RulesEngine:
         """
         all_violations: List[RuleViolation] = []
 
-        for rule in self.rules.values():
+        for rule in list(self.rules.values()):
             if not rule.is_enabled:
                 continue
-            violations = rule.evaluate(tracks, context)
-            if violations:
-                all_violations.extend(violations)
+            try:
+                violations = rule.evaluate(tracks, context)
+                if violations:
+                    all_violations.extend(violations)
+            except Exception as e:
+                print(f"[RulesEngine] Ошибка выполнения правила '{rule.name}': {e}")
 
         return all_violations

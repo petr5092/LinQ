@@ -11,6 +11,7 @@ from app.db.session import check_db_connection
 from app.routes.api import api_router
 from app.routes.websocket import router as ws_router
 from app.seed import seed_database
+from app.services.notifications import notification_manager
 from app.storage.factory import get_storage_provider
 
 # Настройка логирования
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
     - Проверка подключения к БД
     - Инициализация файловых каталогов хранилища
     - Первичное наполнение справочниками (seed) при пустой БД
+    - Запуск менеджера фоновых уведомлений
     """
     logger.info("=== Запуск LinQ Safety Guard Backend ===")
     logger.info(f"Режим отладки (DEBUG): {settings.DEBUG}")
@@ -41,9 +43,11 @@ async def lifespan(app: FastAPI):
     else:
         logger.error("[DB] ВНИМАНИЕ: Ошибка проверки подключения к БД!")
 
-    # Гарантируем создание локальной папки снапшотов
+    # Гарантируем создание локальной папки снапшотов и данных
     snapshots_dir = BASE_DIR / "storage" / "snapshots"
     snapshots_dir.mkdir(parents=True, exist_ok=True)
+    data_dir = BASE_DIR / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
 
     # Проверка хранилища
     storage = get_storage_provider()
@@ -58,9 +62,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Seed] Предупреждение при проверке начальных данных: {e}")
 
+    # Запуск фонового менеджера внешних уведомлений
+    try:
+        notification_manager.start()
+    except Exception as e:
+        logger.warning(f"[Notify] Предупреждение при запуске службы оповещений: {e}")
+
     yield
 
     logger.info("=== Остановка LinQ Safety Guard Backend ===")
+    try:
+        notification_manager.stop()
+    except Exception:
+        pass
 
 
 app = FastAPI(

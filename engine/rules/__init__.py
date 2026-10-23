@@ -6,6 +6,7 @@ from engine.rules.base import BaseRule, FrameContext, RuleViolation, ViolationSe
 from engine.rules.danger_zone import DangerZoneRule, ZoneDefinition
 from engine.rules.engine import RulesEngine
 from engine.rules.fall_detection import FallDetectionRule
+from engine.rules.phone_usage import PhoneUsageRule
 from engine.rules.ppe_compliance import PPEComplianceRule
 from engine.rules.proximity import ProximityRule
 
@@ -18,6 +19,7 @@ __all__ = [
     "ZoneDefinition",
     "RulesEngine",
     "FallDetectionRule",
+    "PhoneUsageRule",
     "PPEComplianceRule",
     "ProximityRule",
 ]

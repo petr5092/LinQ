@@ -47,6 +47,12 @@ linq_resources/
 *.log
 
 # Runtime Storage & Data
+data/*.db
+data/*.sqlite3
+data/*.sqlite
+!data/.gitkeep
+!data/.gitignore
+bench_results.json
 storage/*.sqlite3
 storage/snapshots/*
 !storage/snapshots/.gitkeep
@@ -58,3 +64,8 @@ models/onnx/*.onnx
 models/tpu/*.tpu
 !models/onnx/.gitkeep
 !models/tpu/.gitkeep
+
+# Testing & Coverage
+.coverage
+.pytest_cache/
+htmlcov/

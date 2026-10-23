@@ -1,6 +1,9 @@
+import csv
+import io
 import math
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -16,6 +19,7 @@ from app.services.incident_service import (
     create_incident,
     update_incident_status,
 )
+from app.services.notifications import notification_manager
 from app.services.notifier import notifier
 from app.storage.factory import get_storage_provider
 
@@ -58,6 +62,51 @@ def get_incidents_list(
     )
 
 
+@router.get("/export/csv")
+def export_incidents_csv(
+    site_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None),
+    camera_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Выгрузка журнала инцидентов в CSV-формате (с поддержкой UTF-8 BOM для Excel)."""
+    storage = get_storage_provider()
+    items, _ = list_incidents(
+        db=db,
+        site_id=site_id,
+        status=status,
+        severity=severity,
+        camera_id=camera_id,
+        limit=50000,
+        offset=0,
+        storage_provider=storage,
+    )
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["ID", "Время", "Камера", "Площадка", "Тип нарушения", "Критичность", "Статус", "Снапшот URL"])
+    for item in items:
+        ts_str = getattr(item, "time", "") or str(getattr(item, "created_at", ""))
+        writer.writerow([
+            item.id,
+            ts_str,
+            item.camera_id,
+            item.site_id,
+            item.type,
+            item.severity,
+            item.status,
+            item.snapshot_url or "",
+        ])
+
+    csv_bytes = ("\ufeff" + buf.getvalue()).encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="linq_safety_incidents.csv"'},
+    )
+
+
 @router.get("/{incident_id}", response_model=IncidentRead)
 def get_incident(incident_id: str, db: Session = Depends(get_db)):
     """Получение детальной информации об инциденте."""
@@ -75,16 +124,20 @@ def get_incident(incident_id: str, db: Session = Depends(get_db)):
 async def register_incident(incident_in: IncidentCreate, db: Session = Depends(get_db)):
     """
     Регистрация инцидента (вызывается CV Engine при детекции нарушения).
-    Автоматически инициирует широковещательное WebSocket-оповещение операторов.
+    Автоматически инициирует широковещательное WebSocket и Telegram оповещение операторов.
     """
     storage = get_storage_provider()
     incident_read = create_incident(db=db, incident_in=incident_in, storage_provider=storage)
+    incident_dict = incident_read.model_dump(mode="json")
 
     # Отправляем оповещение диспетчерам через WebSocket
     await notifier.broadcast({
         "event": "INCIDENT_NEW",
-        "data": incident_read.model_dump(mode="json")
+        "data": incident_dict,
     })
+
+    # Отправляем в Telegram и внешние каналы
+    notification_manager.dispatch_incident(incident_dict)
 
     return incident_read
 
@@ -126,5 +179,8 @@ async def change_incident_status(
         "event": "INCIDENT_STATUS_CHANGED",
         "data": updated.model_dump(mode="json")
     })
+
+    # Обновляем статус в Telegram-сообщениях
+    notification_manager.update_incident_status(incident_id, update_data.status)
 
     return updated

@@ -206,7 +206,12 @@ class ByteTracker:
 
         # Добавляем новые треки
         for t in new_tracks:
-            new_unconfirmed.append(t)
+            if t.hits >= self.min_hits_to_confirm:
+                t.state = TrackState.TRACKED
+                t.is_confirmed = True
+                new_tracked.append(t)
+            else:
+                new_unconfirmed.append(t)
 
         # Сохраняем состояние
         self.tracked_stracks = new_tracked

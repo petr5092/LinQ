@@ -3,8 +3,9 @@
 Включает слои:
 - inference: аппаратный инференс LinQ TPU (H1M) / ONNX CPU / Mock
 - tracking: пространственно-временной трекинг объектов (ByteTrack)
-- rules: движок правил ТБ (опасные зоны, сближение, падения, СИЗ)
+- rules: движок правил ТБ (опасные зоны, сближение, падения, СИЗ, телефон)
 - deduplication: анти-спам и подавление ложных тревог (debounce & cooldown)
+- sources: видеоисточники (RTSP, синтетика, файлы, папки)
 - pipeline: сквозной координатор CVPipeline
 """
 
@@ -26,8 +27,18 @@ from engine.rules.base import BaseRule, FrameContext, RuleViolation, ViolationSe
 from engine.rules.danger_zone import DangerZoneRule, ZoneDefinition
 from engine.rules.engine import RulesEngine
 from engine.rules.fall_detection import FallDetectionRule
+from engine.rules.phone_usage import PhoneUsageRule
 from engine.rules.ppe_compliance import PPEComplianceRule
 from engine.rules.proximity import ProximityRule
+from engine.sources import (
+    BaseVideoSource,
+    ImageDirectorySource,
+    RtspSource,
+    SyntheticSource,
+    VideoFileSource,
+    create_video_source,
+    render_scene,
+)
 from engine.tracking.kalman import KalmanBoxTracker
 from engine.tracking.tracker import ByteTracker
 from engine.tracking.types import TrackState, TrackedObject
@@ -61,10 +72,19 @@ __all__ = [
     "ZoneDefinition",
     "RulesEngine",
     "FallDetectionRule",
+    "PhoneUsageRule",
     "PPEComplianceRule",
     "ProximityRule",
     # Deduplication
     "AntiSpamEngine",
     "ConfirmedIncident",
     "IncidentState",
+    # Video Sources
+    "BaseVideoSource",
+    "create_video_source",
+    "SyntheticSource",
+    "render_scene",
+    "VideoFileSource",
+    "RtspSource",
+    "ImageDirectorySource",
 ]

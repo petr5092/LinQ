@@ -1,9 +1,12 @@
 """
-Интеграционные сквозные тесты CV Pipeline LinQ Safety Guard.
+Интеграционные сквозные тесты CV Pipeline LinQ Safety Guard по стандарту test-master.
+Покрытие: E2E-пайплайн, обработка видеофайлов, оверлеи, сброс состояния, отказоустойчивость.
 """
 
 import os
 import shutil
+from unittest.mock import MagicMock, patch
+import cv2
 import numpy as np
 import pytest
 
@@ -15,6 +18,7 @@ from engine.pipeline import CVPipeline
 from engine.rules.danger_zone import DangerZoneRule, ZoneDefinition
 from engine.rules.engine import RulesEngine
 from engine.tracking.tracker import ByteTracker
+from engine.tracking.types import TrackedObject
 
 
 @pytest.fixture
@@ -26,7 +30,7 @@ def temp_storage_dir(tmp_path):
 
 
 def test_cv_pipeline_end_to_end(temp_storage_dir):
-    # 1. Настройка опасной зоны
+    """Сквозной пайплайн: детекция -> трекер -> правила -> антиспам -> сохранение снапшота."""
     zone = ZoneDefinition(
         zone_id="test_dz",
         name="Испытательный полигон",
@@ -36,19 +40,24 @@ def test_cv_pipeline_end_to_end(temp_storage_dir):
     rules_engine = RulesEngine()
     rules_engine.add_rule(DangerZoneRule(zones=[zone]))
 
-    # 2. Мок-детекция рабочего, находящегося внутри опасной зоны (стопы на 250, 350)
     violating_det = Detection(
         bbox=BoundingBox(230.0, 200.0, 270.0, 350.0),
         confidence=0.92,
         class_id=0,
         class_name="person",
     )
-    inference_engine = MockInferenceEngine(
-        canned_detections=[[violating_det]],
-        simulated_delay_ms=2.0,
+    forklift_det = Detection(
+        bbox=BoundingBox(500.0, 500.0, 600.0, 600.0),
+        confidence=0.90,
+        class_id=1,
+        class_name="forklift",
     )
 
-    # 3. Настройка хранилища и анти-спама
+    inference_engine = MockInferenceEngine(
+        canned_detections=[[violating_det, forklift_det]],
+        simulated_delay_ms=1.0,
+    )
+
     storage_provider = LocalStorageProvider(base_dir=temp_storage_dir)
     anti_spam = AntiSpamEngine(debounce_frames=3, cooldown_seconds=60.0)
 
@@ -75,14 +84,12 @@ def test_cv_pipeline_end_to_end(temp_storage_dir):
         res = pipeline.process_frame(dummy_frame)
         results.append(res)
 
-    # Проверка метрик
     last_res = results[-1]
     assert last_res.metrics.frames_processed == 5
     assert last_res.metrics.fps > 0.0
     assert last_res.metrics.inference_time_ms > 0.0
     assert last_res.metrics.tracking_time_ms >= 0.0
 
-    # Проверка выявления инцидента
     assert pipeline.incidents_total == 1
     assert len(received_incidents) == 1
 
@@ -91,9 +98,76 @@ def test_cv_pipeline_end_to_end(temp_storage_dir):
     assert inc.zone_id == "test_dz"
     assert inc.snapshot_path is not None
 
-    # Проверка формирования URL снапшота и физического сохранения на диск
+    # Физическое сохранение на диск
     assert inc.snapshot_path.startswith("/static/snapshots")
     rel_path = inc.snapshot_path.replace("/static/snapshots", "").lstrip("/\\")
     disk_file = os.path.join(temp_storage_dir, rel_path)
     assert os.path.exists(disk_file)
     assert os.path.getsize(disk_file) > 0
+
+
+def test_cv_pipeline_video_processing(tmp_path):
+    """Покадровая обработка видеофайла через генератор process_video_file."""
+    video_path = str(tmp_path / "test_synth.avi")
+
+    # Создаем короткий тестовый видеофайл (5 кадров)
+    fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+    out = cv2.VideoWriter(video_path, fourcc, 25.0, (320, 240))
+    for _ in range(5):
+        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        out.write(frame)
+    out.release()
+
+    pipeline = CVPipeline(
+        inference_engine=MockInferenceEngine(),
+        tracker=ByteTracker(),
+    )
+
+    processed_count = 0
+    for res in pipeline.process_video_file(video_path, max_frames=3, target_fps=100.0):
+        processed_count += 1
+        assert res.frame_id == processed_count
+
+    assert processed_count == 3
+
+    # 1. Проверка вызова с несуществующим файлом
+    with pytest.raises(FileNotFoundError):
+        list(pipeline.process_video_file("missing_video.mp4"))
+
+    # 2. Невозможно открыть существующий файл (isOpened == False)
+    with patch("cv2.VideoCapture") as mock_cap_cls:
+        bad_cap = MagicMock()
+        bad_cap.isOpened.return_value = False
+        mock_cap_cls.return_value = bad_cap
+        with pytest.raises(RuntimeError):
+            list(pipeline.process_video_file(video_path))
+
+
+def test_cv_pipeline_resilience_and_reset(temp_storage_dir):
+    """Устойчивость к исключениям в callback и при сохранении снапшота."""
+    def broken_callback(incident, frame):
+        raise ValueError("Simulated callback failure")
+
+    mock_storage = MagicMock()
+    mock_storage.save_snapshot.side_effect = IOError("Simulated disk full")
+
+    pipeline = CVPipeline(
+        inference_engine=MockInferenceEngine(
+            canned_detections=[[Detection(BoundingBox(10, 10, 50, 50), 0.9, 0, "person")]]
+        ),
+        tracker=ByteTracker(min_hits_to_confirm=1),
+        anti_spam_engine=AntiSpamEngine(debounce_frames=1),
+        storage_provider=mock_storage,
+        incident_callback=broken_callback,
+    )
+
+    # Пайплайн не должен падать даже при сбое callback или хранилища
+    dummy = np.zeros((100, 100, 3), dtype=np.uint8)
+    pipeline.process_frame(dummy)
+
+    assert pipeline.frames_processed == 1
+
+    # Проверка сброса
+    pipeline.reset()
+    assert pipeline.frames_processed == 0
+    assert pipeline.incidents_total == 0

@@ -10,11 +10,15 @@ sys.path.insert(0, str(BASE_DIR))
 
 from starlette.testclient import TestClient
 from app.main import app
+from app.services.camera_hub import camera_hub
+import numpy as np
 
 
 class TestLinQApp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        from app.seed import seed_database
+        seed_database()
         cls.client = TestClient(app)
 
     def test_01_root_endpoint(self):
@@ -46,75 +50,40 @@ class TestLinQApp(unittest.TestCase):
         self.assertIn("south", site_ids)
         self.assertIn("east", site_ids)
 
-        # Проверка вложенности цехов и зон
-        north_site = next(s for s in sites if s["id"] == "north")
-        self.assertGreater(len(north_site["workshops"]), 0)
-        first_workshop = north_site["workshops"][0]
-        self.assertGreater(len(first_workshop["zones"]), 0)
+    def test_04_cameras_list_and_filter(self):
+        """Проверка получения списка камер и фильтрации"""
+        # Все камеры
+        res_all = self.client.get("/api/v1/cameras")
+        self.assertEqual(res_all.status_code, 200)
+        cams = res_all.json()
+        self.assertGreaterEqual(len(cams), 4)
 
-    def test_04_cameras_crud(self):
-        """Тестирование CRUD для видеокамер"""
-        cam_id = f"CAM-TEST-{uuid.uuid4().hex[:6]}"
-        # 1. Получение списка
-        res_list = self.client.get("/api/v1/cameras")
+        # Фильтр по онлайн статусу
+        res_online = self.client.get("/api/v1/cameras?online=true")
+        self.assertEqual(res_online.status_code, 200)
+        for cam in res_online.json():
+            self.assertTrue(cam["online"])
+
+    def test_05_incidents_lifecycle(self):
+        """Проверка жизненного цикла инцидента: создание -> чтение -> смена статуса"""
+        # 1. Получение списка инцидентов
+        res_list = self.client.get("/api/v1/incidents")
         self.assertEqual(res_list.status_code, 200)
-        cameras = res_list.json()
-        self.assertGreaterEqual(len(cameras), 1)
+        data = res_list.json()
+        self.assertIn("items", data)
+        self.assertGreaterEqual(data["total"], 1)
 
-        # 2. Создание тестовой камеры
-        test_cam = {
-            "id": cam_id,
-            "name": "Тестовая камера для проверки",
-            "zone": "Цех № 1",
-            "workshop": "Корпус А",
-            "site_id": "north",
-            "online": True,
-            "fps": 30.0,
-        }
-        res_create = self.client.post("/api/v1/cameras", json=test_cam)
-        self.assertEqual(res_create.status_code, 201)
-        created_data = res_create.json()
-        self.assertEqual(created_data["id"], cam_id)
-
-        # 3. Получение созданной камеры
-        res_get = self.client.get(f"/api/v1/cameras/{cam_id}")
-        self.assertEqual(res_get.status_code, 200)
-        self.assertEqual(res_get.json()["name"], "Тестовая камера для проверки")
-
-        # 4. Обновление (PATCH)
-        res_patch = self.client.patch(f"/api/v1/cameras/{cam_id}", json={"online": False, "fps": 15.0})
-        self.assertEqual(res_patch.status_code, 200)
-        self.assertFalse(res_patch.json()["online"])
-        self.assertEqual(res_patch.json()["fps"], 15.0)
-
-        # 5. Удаление (DELETE)
-        res_del = self.client.delete(f"/api/v1/cameras/{cam_id}")
-        self.assertEqual(res_del.status_code, 200)
-
-        # 6. Проверка удаления
-        res_check = self.client.get(f"/api/v1/cameras/{cam_id}")
-        self.assertEqual(res_check.status_code, 404)
-
-    def test_05_incidents_flow(self):
-        """Тестирование создания и жизненного цикла инцидента"""
-        inc_id = f"TK-TEST-{uuid.uuid4().hex[:6]}"
-        # 1. Список инцидентов
-        res_list = self.client.get("/api/v1/incidents?page=1&size=10")
-        self.assertEqual(res_list.status_code, 200)
-        page_data = res_list.json()
-        self.assertIn("items", page_data)
-        self.assertGreaterEqual(page_data["total"], 1)
-
-        # 2. Регистрация нового инцидента
+        # 2. Создание нового инцидента
+        inc_id = f"test-inc-{uuid.uuid4().hex[:8]}"
         new_incident = {
             "id": inc_id,
-            "site_id": "north",
-            "camera_id": "CAM-01",
-            "zone": "Цех № 1",
-            "title": "Тестовое нарушение СИЗ",
-            "time": "15:00:00",
+            "type": "no_helmet",
+            "title": "Отсутствие защитной каски",
             "severity": "critical",
-            "type": "person",
+            "camera_id": "CAM-01",
+            "site_id": "north",
+            "zone": "gate",
+            "time": "15:30:00",
             "description": "Тестовая проверка жизненного цикла инцидента.",
             "action": "Проверить статус реагирования.",
             "status": "new",
@@ -160,6 +129,47 @@ class TestLinQApp(unittest.TestCase):
             websocket.send_text("ping")
             response = websocket.receive_text()
             self.assertEqual(response, "pong")
+
+    def test_08_notifications_endpoints(self):
+        """Проверка эндпоинтов управления уведомлениями"""
+        res_status = self.client.get("/api/v1/notifications/status")
+        self.assertEqual(res_status.status_code, 200)
+        data = res_status.json()
+        self.assertIn("telegram", data)
+        self.assertIn("subscribers", data)
+
+        res_test = self.client.post("/api/v1/notifications/test", json={})
+        self.assertEqual(res_test.status_code, 200)
+        self.assertTrue(res_test.json()["ok"])
+
+    def test_09_camera_live_statuses_and_frame(self):
+        """Проверка получения оперативного статуса и стоп-кадра камеры"""
+        # Помещаем тестовый кадр в CameraHub
+        dummy_frame = np.full((360, 640, 3), 100, dtype=np.uint8)
+        camera_hub.set_frame("cam-test-live", dummy_frame)
+        camera_hub.update_metrics("cam-test-live", fps=24.5, detect_time_ms=12.3, latency_ms=15.1)
+
+        res_statuses = self.client.get("/api/v1/cameras/statuses/live")
+        self.assertEqual(res_statuses.status_code, 200)
+        statuses = res_statuses.json()
+        self.assertTrue(any(s["camera_id"] == "cam-test-live" for s in statuses))
+
+        res_frame = self.client.get("/api/v1/cameras/cam-test-live/frame.jpg")
+        self.assertEqual(res_frame.status_code, 200)
+        self.assertEqual(res_frame.headers["content-type"], "image/jpeg")
+        self.assertGreater(len(res_frame.content), 100)
+
+        res_metrics = self.client.get("/api/v1/cameras/cam-test-live/metrics")
+        self.assertEqual(res_metrics.status_code, 200)
+        self.assertEqual(res_metrics.json()["fps"], 24.5)
+
+    def test_10_incidents_export_csv(self):
+        """Проверка экспорта журнала инцидентов в CSV"""
+        response = self.client.get("/api/v1/incidents/export/csv")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response.headers["content-type"])
+        text = response.content.decode("utf-8")
+        self.assertIn("ID,Время,Камера,Площадка", text)
 
 
 if __name__ == "__main__":

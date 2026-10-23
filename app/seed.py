@@ -174,6 +174,9 @@ SEED_INCIDENTS = [
 
 
 def seed_database():
+    from app.db.base import Base
+    from app.db.session import engine
+    Base.metadata.create_all(bind=engine)
     """Заполнение БД базовыми объектами при пустой базе."""
     db = SessionLocal()
     try:

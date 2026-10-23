@@ -84,9 +84,7 @@ class AntiSpamEngine:
                 continue
 
             # Проверяем кулдаун от предыдущего закрытого инцидента по этому же треку
-            last_alert = self._last_alert_time.get(key, 0.0)
-            if now - last_alert < self.cooldown_seconds:
-                # В периоде кулдауна повторный новый алерт не порождается
+            if key in self._last_alert_time and (now - self._last_alert_time[key]) < self.cooldown_seconds:
                 continue
 
             # Обработка кандидатов (Debounce)
@@ -96,43 +94,44 @@ class AntiSpamEngine:
                 cand.missed_count = 0
                 cand.last_seen_at = now
                 cand.violation = v  # обновляем актуальные метаданные
-
-                # Проверка достижения порога debounce
-                if cand.streak_count >= self.debounce_frames:
-                    # ПОДТВЕРЖДЕНО: порождаем новый инцидент
-                    confirmed = ConfirmedIncident(
-                        rule_name=v.rule_name,
-                        rule_id=v.rule_id,
-                        severity=v.severity,
-                        camera_id=v.camera_id,
-                        track_id=v.track_id,
-                        involved_track_ids=list(v.involved_track_ids),
-                        description=v.description,
-                        bbox=v.bbox,
-                        zone_id=v.zone_id,
-                        first_seen_at=cand.first_seen_at,
-                        confirmed_at=now,
-                        last_seen_at=now,
-                        duration_seconds=now - cand.first_seen_at,
-                        state=IncidentState.CONFIRMED,
-                        metadata=dict(v.metadata),
-                    )
-
-                    self._active_incidents[key] = confirmed
-                    self._last_alert_time[key] = now
-                    newly_confirmed.append(confirmed)
-
-                    # Удаляем из кандидатов
-                    del self._candidates[key]
             else:
                 # Первый раз увидели нарушение — создаем кандидата
-                self._candidates[key] = _ViolationCandidate(
+                cand = _ViolationCandidate(
                     violation=v,
                     streak_count=1,
                     missed_count=0,
                     first_seen_at=now,
                     last_seen_at=now,
                 )
+                self._candidates[key] = cand
+
+            # Проверка достижения порога debounce
+            if cand.streak_count >= self.debounce_frames:
+                # ПОДТВЕРЖДЕНО: порождаем новый инцидент
+                confirmed = ConfirmedIncident(
+                    rule_name=v.rule_name,
+                    rule_id=v.rule_id,
+                    severity=v.severity,
+                    camera_id=v.camera_id,
+                    track_id=v.track_id,
+                    involved_track_ids=list(v.involved_track_ids),
+                    description=v.description,
+                    bbox=v.bbox,
+                    zone_id=v.zone_id,
+                    first_seen_at=cand.first_seen_at,
+                    confirmed_at=now,
+                    last_seen_at=now,
+                    duration_seconds=max(0.0, now - cand.first_seen_at),
+                    state=IncidentState.CONFIRMED,
+                    metadata=dict(v.metadata),
+                )
+
+                self._active_incidents[key] = confirmed
+                self._last_alert_time[key] = now
+                newly_confirmed.append(confirmed)
+
+                # Удаляем из кандидатов
+                self._candidates.pop(key, None)
 
         # 2. Обработка пропущенных кандидатов (сброс дребезга)
         stale_candidates = []

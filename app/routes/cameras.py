@@ -1,6 +1,7 @@
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,6 +10,7 @@ from app.db.models.camera import Camera
 from app.db.models.site import Site
 from app.schemas.camera import CameraRead, CameraCreate, CameraUpdate
 from app.schemas.common import StatusResponse
+from app.services.camera_hub import camera_hub
 
 router = APIRouter(prefix="/cameras", tags=["Cameras"])
 
@@ -33,6 +35,12 @@ def list_cameras(
     return cameras
 
 
+@router.get("/statuses/live")
+def get_live_camera_statuses():
+    """Оперативные статусы всех активных камер из CameraHub (онлайн, офлайн, FPS, задержка)."""
+    return camera_hub.get_camera_statuses()
+
+
 @router.get("/{camera_id}", response_model=CameraRead)
 def get_camera(camera_id: str, db: Session = Depends(get_db)):
     """Получение детальной информации о камере."""
@@ -40,6 +48,38 @@ def get_camera(camera_id: str, db: Session = Depends(get_db)):
     if not camera:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Камера не найдена")
     return camera
+
+
+@router.get("/{camera_id}/stream")
+async def stream_camera(camera_id: str):
+    """Прямой MJPEG-видеопоток с камеры (multipart/x-mixed-replace)."""
+    return StreamingResponse(
+        camera_hub.mjpeg_generator(camera_id),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@router.get("/{camera_id}/frame.jpg")
+def get_camera_frame(camera_id: str):
+    """Получение последнего JPEG-кадра с камеры."""
+    frame_bytes = camera_hub.get_frame(camera_id)
+    if not frame_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Свежий кадр для камеры '{camera_id}' пока не получен",
+        )
+    return Response(
+        content=frame_bytes,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@router.get("/{camera_id}/metrics")
+def get_camera_metrics(camera_id: str):
+    """Показатели производительности камеры (FPS, latency, detect_time_ms)."""
+    return camera_hub.get_metrics(camera_id)
 
 
 @router.post("", response_model=CameraRead, status_code=status.HTTP_201_CREATED)
