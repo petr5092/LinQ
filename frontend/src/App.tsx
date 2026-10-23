@@ -62,6 +62,7 @@ import {
   type SafetyEvent,
   type SiteId,
 } from './data'
+import { api } from '@/services/api'
 
 const navItems = [
   { key: 'overview', label: 'Обзор', icon: LayoutDashboard },
@@ -226,6 +227,7 @@ function readEvents() {
 export default function App() {
   const [page, setPage] = useState('overview')
   const [events, setEvents] = useState<SafetyEvent[]>(readEvents)
+  const [isLiveBackend, setIsLiveBackend] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [zone, setZone] = useState('all')
   const [siteId, setSiteId] = useState<SiteId>('north')
@@ -275,8 +277,36 @@ export default function App() {
   useEffect(() => {
     document.title = `Тук-Тук · ${pageTitles[page]}`
   }, [page])
+  useEffect(() => {
+    let isMounted = true
+    api.getIncidents().then((backendEvents) => {
+      if (isMounted && backendEvents.length > 0) {
+        setEvents(backendEvents)
+        setIsLiveBackend(true)
+      }
+    })
+
+    const unsubscribe = api.subscribeToEvents(
+      (newIncident) => {
+        setEvents((prev) => [newIncident, ...prev.filter((e) => e.id !== newIncident.id)])
+        notify(`Новое событие: ${newIncident.title} (${newIncident.zone})`)
+      },
+      (id, newStatus) => {
+        setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, status: newStatus } : e)))
+      },
+      (connected) => {
+        setIsLiveBackend(connected)
+      }
+    )
+
+    return () => {
+      isMounted = false
+      unsubscribe()
+    }
+  }, [])
   const updateStatus = (id: string, value: EventStatus) => {
     setEvents((list) => list.map((e) => (e.id === id ? { ...e, status: value } : e)))
+    api.updateStatus(id, value)
     notify(
       value === 'working'
         ? 'Событие взято в работу. Ответственный назначен.'
@@ -696,6 +726,11 @@ export default function App() {
             <span>
               Тук-Тук<span className="brand-dot">.</span>
             </span>
+            {isLiveBackend && (
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 rounded px-1.5 py-0.5 font-medium ml-2 self-center" title="Подключено к LinQ REST API и WebSocket">
+                API Live
+              </span>
+            )}
           </a>
           <button
             className="sidebar-toggle"
