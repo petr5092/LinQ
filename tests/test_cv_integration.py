@@ -43,12 +43,14 @@ def cv_api(tmp_path, monkeypatch):
     storage = LocalStorageProvider(str(tmp_path / 'snapshots'))
     broadcast = AsyncMock()
     dispatch = Mock()
+    refresh = Mock()
     app.dependency_overrides[get_db] = session
     monkeypatch.setattr(worker, 'get_storage_provider', lambda: storage)
     monkeypatch.setattr(worker.notifier, 'broadcast', broadcast)
     monkeypatch.setattr(worker.notification_manager, 'dispatch_incident', dispatch)
+    monkeypatch.setattr(worker.notification_manager, 'refresh_incident', refresh)
     try:
-        yield TestClient(app), sessions, storage, broadcast, dispatch
+        yield TestClient(app), sessions, storage, broadcast, dispatch, refresh
     finally:
         app.dependency_overrides.pop(get_db, None)
         database.dispose()
@@ -65,11 +67,12 @@ def envelope():
 
 
 def test_cv_api_persists_once_and_stores_key_not_base64(cv_api):
-    client, sessions, storage, broadcast, dispatch = cv_api
+    client, sessions, storage, broadcast, dispatch, _ = cv_api
     data = envelope()
     first = client.post('/api/v1/worker/incidents', json=data)
     second = client.post('/api/v1/worker/incidents', json=data)
-    assert first.status_code == second.status_code == 201
+    assert first.status_code == 201
+    assert second.status_code == 200
     body = first.json()
     assert body['box'] == [10, 10, 20, 40]
     assert body['snapshot_url'].count('/static/snapshots/') == 1
@@ -81,6 +84,25 @@ def test_cv_api_persists_once_and_stores_key_not_base64(cv_api):
     broadcast.assert_awaited_once()
     assert broadcast.await_args.args[0]['event'] == 'INCIDENT_CREATED'
     dispatch.assert_called_once()
+
+
+def test_cv_worker_merges_repeated_incidents_and_refreshes_notifications(cv_api):
+    client, sessions, _, broadcast, dispatch, refresh = cv_api
+    first = client.post('/api/v1/worker/incidents', json=envelope())
+    second = client.post('/api/v1/worker/incidents', json=envelope())
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json()['id'] == first.json()['id']
+    with sessions() as db:
+        assert db.scalar(select(func.count(Incident.id))) == 1
+
+    assert [call.args[0]['event'] for call in broadcast.await_args_list] == [
+        'INCIDENT_CREATED',
+        'INCIDENT_UPDATED',
+    ]
+    dispatch.assert_called_once()
+    refresh.assert_called_once()
 
 
 @pytest.mark.parametrize('field,value', [('camera_id', 'unknown'), ('site_id', 'wrong'), ('id', '../escape')])
@@ -121,6 +143,27 @@ def test_ppe_cannot_run_on_person_only_model():
 def test_phone_class_from_coco_is_used():
     rules = build_rules({'rules': {'phone_usage': {'enabled': True}}}, {}, {0: 'person', 1: 'cell phone'})
     assert rules.get_rule('phone_usage').phone_class_name == 'cell phone'
+
+
+def test_configured_worker_rules_use_shared_registry():
+    config = load_config()
+    camera = config['cameras'][0]
+    class_names = {
+        0: 'person',
+        1: 'helmet',
+        2: 'vest',
+        3: 'forklift',
+    }
+
+    rules = build_rules(config, camera, class_names)
+
+    assert set(rules.rules) == {
+        'danger_zone',
+        'proximity',
+        'fall_detection',
+        'ppe_compliance',
+    }
+    assert rules.get_rule('proximity').safe_distance_px == 140.0
 
 
 def test_worker_configuration_smoke(tmp_path):

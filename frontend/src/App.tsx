@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
   Activity,
-  ArrowDownLeft,
   ArrowDownToLine,
   ArrowRight,
   Bell,
@@ -68,7 +67,7 @@ import {
   type SafetyEvent,
   type SiteId,
 } from './data'
-import { api } from '@/services/api'
+import { api, type AnalyticsSummary } from '@/services/api'
 
 const navItems = [
   { key: 'overview', label: 'Обзор', icon: LayoutDashboard },
@@ -417,6 +416,11 @@ export default function App() {
   const [page, setPage] = useState('overview')
   const [events, setEvents] = useState<SafetyEvent[]>(readEvents)
   const [isLiveBackend, setIsLiveBackend] = useState(false)
+  const [analyticsResult, setAnalyticsResult] = useState<{
+    siteId: SiteId
+    summary?: AnalyticsSummary
+    error: boolean
+  } | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [inspectedCamera, setInspectedCamera] = useState<Camera | null>(null)
   const [zone, setZone] = useState('all')
@@ -509,7 +513,7 @@ export default function App() {
   useEffect(() => {
     let isMounted = true
     api.getIncidents().then((backendEvents) => {
-      if (isMounted && backendEvents.length > 0) {
+      if (isMounted && backendEvents !== null) {
         setEvents(backendEvents)
         setIsLiveBackend(true)
       }
@@ -525,6 +529,11 @@ export default function App() {
       },
       (connected) => {
         setIsLiveBackend(connected)
+      },
+      (updatedIncident) => {
+        setEvents((prev) =>
+          [updatedIncident, ...prev.filter((event) => event.id !== updatedIncident.id)]
+        )
       }
     )
 
@@ -533,6 +542,19 @@ export default function App() {
       unsubscribe()
     }
   }, [])
+  useEffect(() => {
+    let isMounted = true
+    api.getAnalyticsSummary(siteId).then((summary) => {
+      if (isMounted) setAnalyticsResult({ siteId, summary, error: false })
+    }).catch(() => {
+      if (isMounted) setAnalyticsResult({ siteId, error: true })
+    })
+    return () => {
+      isMounted = false
+    }
+  }, [siteId])
+  const analytics = analyticsResult?.siteId === siteId ? analyticsResult.summary ?? null : null
+  const analyticsError = analyticsResult?.siteId === siteId && analyticsResult.error
   const updateStatus = (id: string, value: EventStatus) => {
     setEvents((list) => list.map((e) => (e.id === id ? { ...e, status: value } : e)))
     api.updateStatus(id, value)
@@ -664,28 +686,22 @@ export default function App() {
         }}
       >
         <span className="stat-label">
-          Устранено за смену <ShieldCheck size={15} />
+          Устранено всего <ShieldCheck size={15} />
         </span>
         <div className="stat-value">
-          {siteEvents.filter((e) => e.status === 'resolved').length}
-          <span className="stat-value-tag green">
-            <ArrowDownLeft size={12} /> 2 за последний час
-          </span>
+          {analytics?.incidents.resolved ?? '—'}
         </div>
-        <div className="stat-note">Безопасность в действии</div>
+        <div className="stat-note">По данным базы инцидентов</div>
         <StatSpark color="blue" />
       </button>
       <button className="stat-card" onClick={() => navigate('analytics')}>
         <span className="stat-label">
-          Время реакции <Clock3 size={15} />
+          Инциденты сегодня <Clock3 size={15} />
         </span>
         <div className="stat-value">
-          1<span className="stat-unit">м</span> 42<span className="stat-unit">с</span>
+          {analytics?.today.total ?? '—'}
         </div>
-        <div className="stat-note">
-          <span className="positive">↓ 18%</span> к прошлой смене
-        </div>
-        <StatSpark inverse color="blue" />
+        <div className="stat-note">По данным базы инцидентов</div>
       </button>
     </div>
   )
@@ -1379,62 +1395,100 @@ export default function App() {
           ) : null}
           {page === 'analytics' ? (
             <>
-              {stats}
-              <div className="analytics-card">
-                <div className="section-heading">
-                  <div>
-                    <h2>События в течение смены</h2>
-                    <p>23 октября · 08:00–20:00</p>
-                  </div>
-                  <span className="chart-legend">
-                    <i /> Нарушения
-                  </span>
+              {analyticsError ? (
+                <div className="analytics-card" role="alert">
+                  Не удалось загрузить аналитику из базы данных. Проверьте доступность сервера.
                 </div>
-                <div className="bar-chart">
-                  {[2, 1, 3, 2, 4, 3, 6, 4, 2, 1, 0, 0].map((n, i) => (
-                    <div className="chart-col" key={i}>
-                      <span style={{ height: `${n * 27 + 4}px` }}>
-                        <b>{n}</b>
-                      </span>
-                      <small>{String(i + 8).padStart(2, '0')}:00</small>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="analytics-bottom">
-                <section>
-                  <h2>По зонам</h2>
-                  {siteZones.map((z) => (
-                    <div className="zone-chart-row" key={z}>
-                      <span>{z}</span>
-                      <div>
-                        <i
-                          style={{
-                            width: `${(siteEvents.filter((e) => e.zone === z).length / Math.max(siteEvents.length, 1)) * 200}%`,
-                          }}
-                        />
+              ) : analytics === null ? (
+                <div className="analytics-card" role="status">Загрузка аналитики…</div>
+              ) : (
+                <>
+                  <div className="stats-grid">
+                    {[
+                      ['Инциденты за всё время', analytics.incidents.total],
+                      ['Открытые', analytics.incidents.active],
+                      ['Критические', analytics.severity.critical],
+                      ['Устранённые', analytics.incidents.resolved],
+                    ].map(([label, value]) => (
+                      <div className="stat-card" key={label}>
+                        <span className="stat-label">{label}</span>
+                        <div className="stat-value">{value}</div>
                       </div>
-                      <b>{siteEvents.filter((e) => e.zone === z).length}</b>
-                    </div>
-                  ))}
-                </section>
-                <section>
-                  <h2>Типы событий</h2>
-                  {[
-                    ['Действия сотрудников', siteEvents.filter((e) => e.type === 'person').length],
-                    ['Контроль доступа', siteEvents.filter((e) => e.type === 'access').length],
-                    ['Состояние среды', siteEvents.filter((e) => e.type === 'environment').length],
-                  ].map(([label, n]) => (
-                    <div className="type-stat" key={label}>
-                      <span>{label}</span>
-                      <strong>{n}</strong>
-                    </div>
-                  ))}
-                  <div className="analytics-note">
-                    <ShieldCheck size={18} /> Одно нарушение — одно уведомление. Повторные срабатывания объединяются.
+                    ))}
                   </div>
-                </section>
-              </div>
+                  <div className="analytics-card">
+                    <div className="section-heading">
+                      <div>
+                        <h2>Инциденты за сутки</h2>
+                        <p>
+                          {new Intl.DateTimeFormat('ru-RU', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            timeZone: 'UTC',
+                          }).format(new Date(`${analytics.date}T00:00:00Z`))}
+                        </p>
+                      </div>
+                      <span className="chart-legend">
+                        <i /> Из базы данных · всего {analytics.today.total}
+                      </span>
+                    </div>
+                    {analytics.today.total === 0 ? (
+                      <p>За эти сутки зарегистрированных инцидентов нет.</p>
+                    ) : null}
+                    <div style={{ overflowX: 'auto' }}>
+                      <div className="bar-chart" style={{ minWidth: 900 }}>
+                        {analytics.today.hourly.map((count, hour) => (
+                          <div className="chart-col" key={hour}>
+                            <span style={{ height: `${Math.max(4, (count / Math.max(...analytics.today.hourly, 1)) * 108)}px` }}>
+                              <b>{count}</b>
+                            </span>
+                            <small>{String(hour).padStart(2, '0')}:00</small>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="analytics-bottom">
+                    <section>
+                      <h2>По зонам · за сутки</h2>
+                      {analytics.today.by_zone.length > 0 ? analytics.today.by_zone.map(({ name, count }) => (
+                        <div className="zone-chart-row" key={name}>
+                          <span>{name}</span>
+                          <div>
+                            <i
+                              style={{
+                                width: `${(count / analytics.today.total) * 100}%`,
+                              }}
+                            />
+                          </div>
+                          <b>{count}</b>
+                        </div>
+                      )) : <p>Нет данных за выбранные сутки.</p>}
+                    </section>
+                    <section>
+                      <h2>Типы событий · за сутки</h2>
+                      {analytics.today.by_type.length > 0 ? analytics.today.by_type.map(({ name, count }) => (
+                        <div className="type-stat" key={name}>
+                          <span>
+                            {name === 'person'
+                              ? 'Действия сотрудников'
+                              : name === 'access'
+                                ? 'Контроль доступа'
+                                : name === 'environment'
+                                  ? 'Состояние среды'
+                                  : name}
+                          </span>
+                          <strong>{count}</strong>
+                        </div>
+                      )) : <p>Нет данных за выбранные сутки.</p>}
+                      <div className="analytics-note">
+                        <ShieldCheck size={18} /> Подсчёт ведётся по зарегистрированным инцидентам выбранной площадки.
+                      </div>
+                    </section>
+                  </div>
+                </>
+              )}
             </>
           ) : null}
           {page === 'settings' ? (

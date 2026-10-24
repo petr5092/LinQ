@@ -12,6 +12,7 @@ from datetime import datetime
 from app.enterprise import EnterpriseConfig
 from app.hub import Hub
 from app.logging_config import configure_logging, shutdown_logging
+from app.notify.core import Notifier, NotifyStore
 from app.server import serve
 from app.store import EventStore, ZoneStore
 
@@ -117,6 +118,71 @@ class EventAuditTest(unittest.TestCase):
         self.assertIsNone(self.store.set_status(eid + 1, "confirmed", "Оператор"))
         self.assertEqual(self.store.history(eid), [])
 
+    def test_repeated_open_event_updates_existing_record_within_five_minutes(self):
+        timestamp = time.time()
+        event_id = self.store.add(event(ts=timestamp, severity="medium"))
+        repeated = event(ts=timestamp + 30, severity="critical", track_id=8, snapshot="new.jpg")
+
+        self.assertEqual(self.store.add(repeated), event_id)
+        rows = self.store.query()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], event_id)
+        self.assertEqual(rows[0]["ts"], timestamp + 30)
+        self.assertEqual(rows[0]["severity"], "critical")
+        self.assertEqual(rows[0]["track_id"], 8)
+        self.assertEqual(rows[0]["snapshot"], "new.jpg")
+        self.assertTrue(repeated["merged"])
+
+    def test_event_after_window_or_status_change_starts_new_record(self):
+        timestamp = time.time()
+        event_id = self.store.add(event(ts=timestamp))
+        after_window = self.store.add(event(ts=timestamp + 301))
+        self.assertNotEqual(after_window, event_id)
+
+        self.store.set_status(after_window, "confirmed", "Оператор")
+        after_resolution = self.store.add(event(ts=timestamp + 302))
+        self.assertNotEqual(after_resolution, after_window)
+        self.assertEqual(len(self.store.query()), 3)
+
+    def test_event_update_refreshes_existing_notification(self):
+        event_id = self.store.add(event())
+        notify_store = NotifyStore(os.path.join(self.temp.name, "notify.db"))
+        notify_store.add_delivery(event_id, "telegram", "chat-1", "message-1", "photo", True)
+        hub = Hub()
+        notifier = Notifier(self.store, hub, notify_store)
+
+        class RecordingClient:
+            channel = "telegram"
+
+            def __init__(self):
+                self.updated = threading.Event()
+                self.stopped = threading.Event()
+                self.refreshed_event = None
+
+            def run(self):
+                self.stopped.wait()
+
+            def stop(self):
+                self.stopped.set()
+
+            def update_alert(self, delivery, current_event):
+                self.refreshed_event = current_event
+                self.updated.set()
+
+            def send_alert(self, *_args):
+                raise AssertionError("Merged event must not send another alert")
+
+        client = RecordingClient()
+        notifier.add_client(client)
+        notifier.start()
+        try:
+            hub.publish({"kind": "event_update", "event": self.store.get(event_id)})
+            self.assertTrue(client.updated.wait(2))
+            self.assertEqual(client.refreshed_event["id"], event_id)
+        finally:
+            notifier.stop()
+            notify_store.db.close()
+
     def test_dashboard_groups_enterprise_metrics(self):
         first = self.store.add(event(workshop="Цех A", shift="Смена 1", severity="critical"))
         self.store.set_status(first, "confirmed", "Оператор A")
@@ -206,7 +272,7 @@ class DashboardTest(unittest.TestCase):
             now = time.time()
             id_a = st.add(event(ts=now - 120))
             id_b = st.add(event(ts=now - 60, type="phone", severity="low"))
-            st.add(event(ts=now - 10))
+            st.add(event(ts=now - 10, camera="cam2"))
             st.set_status(id_a, "confirmed", "@m")
             st.set_status(id_b, "false", "@m")
             d = st.dashboard(since=now - 3600)

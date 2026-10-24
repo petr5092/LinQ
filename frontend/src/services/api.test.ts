@@ -250,15 +250,46 @@ describe("api service & data mappers", () => {
       } as Response)
 
       const incidents = await api.getIncidents("north")
+      expect(incidents).not.toBeNull()
+      if (incidents === null) throw new Error("Expected incidents response")
       expect(incidents.length).toBe(1)
       expect(incidents[0].id).toBe("TK-101")
     })
 
-    it("returns empty array on network failure", async () => {
+    it("returns null on network failure so callers can distinguish it from no incidents", async () => {
       vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Connection refused"))
 
       const incidents = await api.getIncidents()
-      expect(incidents).toEqual([])
+      expect(incidents).toBeNull()
+    })
+  })
+
+  describe("api.getAnalyticsSummary", () => {
+    it("requests analytics for the selected site without substituting demo values", async () => {
+      const summary = {
+        date: "2026-10-24",
+        incidents: { total: 0, active: 0, new: 0, working: 0, resolved: 0, dismissed: 0 },
+        severity: { critical: 0, warning: 0, info: 0 },
+        cameras: { total: 0, online: 0, offline: 0 },
+        today: { total: 0, hourly: Array(24).fill(0), by_zone: [], by_type: [] },
+      }
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => summary,
+      } as Response)
+
+      await expect(api.getAnalyticsSummary("north")).resolves.toEqual(summary)
+      expect(fetchSpy).toHaveBeenCalledWith("/api/v1/analytics/summary?site_id=north")
+    })
+
+    it("rejects when the analytics endpoint is unavailable", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+      } as Response)
+
+      await expect(api.getAnalyticsSummary("north")).rejects.toThrow("HTTP 503")
     })
   })
 
@@ -316,8 +347,14 @@ describe("api service & data mappers", () => {
       const onNewIncident = vi.fn()
       const onStatusUpdate = vi.fn()
       const onConnectionChange = vi.fn()
+      const onIncidentUpdated = vi.fn()
 
-      const unsubscribe = api.subscribeToEvents(onNewIncident, onStatusUpdate, onConnectionChange)
+      const unsubscribe = api.subscribeToEvents(
+        onNewIncident,
+        onStatusUpdate,
+        onConnectionChange,
+        onIncidentUpdated
+      )
 
       expect(mockWsInstances.length).toBe(1)
       const ws = mockWsInstances[0]
@@ -346,6 +383,25 @@ describe("api service & data mappers", () => {
 
       expect(onNewIncident).toHaveBeenCalledTimes(1)
       expect(onNewIncident.mock.calls[0][0].id).toBe("TK-NEW-1")
+
+      ws.onmessage({
+        data: JSON.stringify({
+          event: "INCIDENT_UPDATED",
+          data: {
+            id: "TK-NEW-1",
+            site_id: "north",
+            camera_id: "CAM-01",
+            zone: "Цех № 1",
+            title: "Новое нарушение в реальном времени",
+            time: "15:20:01",
+            severity: "critical",
+            type: "person",
+            status: "new",
+          },
+        }),
+      })
+      expect(onIncidentUpdated).toHaveBeenCalledTimes(1)
+      expect(onIncidentUpdated.mock.calls[0][0].id).toBe("TK-NEW-1")
 
       // Simulate INCIDENT_STATUS_UPDATED
       ws.onmessage({

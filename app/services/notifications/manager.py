@@ -5,13 +5,15 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import queue
+import re
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Dict, Optional
 
 from app.config import settings, BASE_DIR
+from app.services.notifications.base import BaseMessengerAdapter
+from app.services.notifications.extensions import load_adapter
 from app.services.notifications.netio import ApiError, NetioClient
 from app.services.notifications.store import NotificationStore
 from app.services.notifications.telegram import TelegramClient, SEV_ORDER
@@ -25,6 +27,8 @@ class NotificationManager:
         self.store = NotificationStore()
         self.q: queue.Queue = queue.Queue(maxsize=1000)
         self._stop = False
+        self._started = False
+        self._plugins_loaded = False
         self._worker_thread: Optional[threading.Thread] = None
 
         # Инициализация Telegram
@@ -39,6 +43,7 @@ class NotificationManager:
             public_url=pub_url,
             on_status_change=self._on_telegram_status_change,
         )
+        self.adapters: Dict[str, BaseMessengerAdapter] = {"telegram": self.telegram}
 
         # Инициализация NetIO
         netio_host = getattr(settings, "NETIO_HOST", None) or os.getenv("NETIO_HOST")
@@ -46,17 +51,47 @@ class NotificationManager:
 
     def start(self) -> None:
         """Запуск фоновых воркеров рассылки и long polling Telegram."""
+        if self._started:
+            return
+        self._load_configured_adapters()
         self._stop = False
+        self._started = True
         self._worker_thread = threading.Thread(target=self._delivery_loop, daemon=True, name="notify_delivery_worker")
         self._worker_thread.start()
 
-        if self.telegram.token:
-            self.telegram.start()
+        for adapter in self.adapters.values():
+            if adapter.enabled:
+                adapter.start()
 
     def stop(self) -> None:
         """Остановка сервиса уведомлений."""
         self._stop = True
-        self.telegram.stop()
+        for adapter in self.adapters.values():
+            adapter.stop()
+        self._started = False
+
+    def register_adapter(self, adapter: BaseMessengerAdapter) -> None:
+        """Register a messenger adapter before the notification service starts."""
+        if self._started:
+            raise RuntimeError("Messenger adapters must be registered before NotificationManager.start().")
+        if not isinstance(adapter, BaseMessengerAdapter):
+            raise TypeError("adapter must inherit from BaseMessengerAdapter.")
+        channel = getattr(adapter, "channel", None)
+        if not isinstance(channel, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,49}", channel):
+            raise ValueError("Adapter channel must be 1-50 lowercase letters, digits, '_' or '-' and start with a letter.")
+        if channel == "netio":
+            raise ValueError("'netio' is reserved for the hardware alarm integration.")
+        if channel in self.adapters:
+            raise ValueError(f"A messenger adapter is already registered for channel '{channel}'.")
+        self.adapters[channel] = adapter
+
+    def _load_configured_adapters(self) -> None:
+        if self._plugins_loaded:
+            return
+        specs = os.getenv("LINQ_MESSENGER_ADAPTERS", "")
+        for spec in filter(None, (value.strip() for value in specs.split(","))):
+            self.register_adapter(load_adapter(spec, self))
+        self._plugins_loaded = True
 
     def dispatch_incident(self, incident: dict, snapshot_path: Optional[str] = None) -> None:
         """Постановка инцидента в очередь внешней рассылки."""
@@ -69,8 +104,15 @@ class NotificationManager:
         except queue.Full:
             print("[NotificationManager] Очередь рассылки переполнена!")
 
+    def refresh_incident(self, incident: dict) -> None:
+        """Update the existing notification for a repeated detection."""
+        try:
+            self.q.put_nowait({"kind": "incident_update", "event": incident})
+        except queue.Full:
+            print("[NotificationManager] Очередь рассылки переполнена!")
+
     def update_incident_status(self, event_id: str, new_status: str, operator_name: Optional[str] = None) -> None:
-        """Обновление статуса в отправленных сообщениях (Telegram)."""
+        """Queue status updates for all channels that support message editing."""
         try:
             self.q.put_nowait({
                 "kind": "status_update",
@@ -94,6 +136,8 @@ class NotificationManager:
                 kind = task.get("kind")
                 if kind == "incident":
                     self._deliver_incident(task["event"], task.get("snapshot_path"))
+                elif kind == "incident_update":
+                    self._refresh_incident_messages(task["event"])
                 elif kind == "status_update":
                     self._refresh_incident_messages(task["event"])
             except Exception as e:
@@ -107,31 +151,32 @@ class NotificationManager:
         if event_sev_lvl >= SEV_ORDER["critical"] and self.netio:
             self.netio.trigger_siren()
 
-        # Рассылка по активным Telegram-подписчикам
-        if self.telegram.token:
-            active_subs = self.store.list_subscribers(channel="telegram", active=True)
-            snap = snapshot_path
-            if not snap:
-                for k in ("snapshot_path", "snapshot_url", "image_key"):
-                    val = event.get(k)
-                    if val and isinstance(val, str):
-                        rel = val.replace("/static/snapshots/", "").lstrip("/\\")
-                        for base in (str(settings.LOCAL_SNAPSHOTS_DIR), os.path.join(str(BASE_DIR), "storage", "snapshots")):
-                            cand = os.path.join(base, rel)
-                            if os.path.isfile(cand):
-                                snap = cand
-                                break
-                    if snap:
-                        break
+        snap = snapshot_path
+        if not snap:
+            for k in ("snapshot_path", "snapshot_url", "image_key"):
+                val = event.get(k)
+                if val and isinstance(val, str):
+                    rel = val.replace("/static/snapshots/", "").lstrip("/\\")
+                    for base in (str(settings.LOCAL_SNAPSHOTS_DIR), os.path.join(str(BASE_DIR), "storage", "snapshots")):
+                        cand = os.path.join(base, rel)
+                        if os.path.isfile(cand):
+                            snap = cand
+                            break
+                if snap:
+                    break
 
+        for adapter in self.adapters.values():
+            if not adapter.enabled:
+                continue
+            active_subs = self.store.list_subscribers(channel=adapter.channel, active=True)
             for sub in active_subs:
                 sub_min_sev = SEV_ORDER.get(sub.get("min_severity", "low").lower(), 0)
                 if event_sev_lvl >= sub_min_sev:
-                    self._send_with_retry(self.telegram, sub, event, snap)
+                    self._send_with_retry(adapter, sub, event, snap)
 
     def _send_with_retry(
         self,
-        client: TelegramClient,
+        client: BaseMessengerAdapter,
         subscriber: dict,
         event: dict,
         snapshot_path: Optional[str] = None,
@@ -180,11 +225,29 @@ class NotificationManager:
 
     def _refresh_incident_messages(self, event: dict) -> None:
         eid = str(event.get("id") or event.get("event_id") or "0")
-        deliveries = self.store.get_deliveries_for_event(eid, channel="telegram")
+        deliveries = self.store.get_deliveries_for_event(eid)
+        if deliveries and not any(event.get(key) for key in ("rule_label", "rule_name", "title")):
+            from app.db.models.incident import Incident
+            from app.db.session import SessionLocal
+            from app.services.incident_service import map_incident_to_read
+
+            with SessionLocal() as db:
+                incident = db.get(Incident, eid)
+                if incident:
+                    full_event = map_incident_to_read(incident).model_dump(mode="json")
+                    full_event.update(event)
+                    full_event.update(
+                        camera_name=incident.camera.name if incident.camera else incident.camera_id,
+                        zone_name=incident.zone,
+                        rule_label=incident.title,
+                        timestamp_str=incident.time,
+                    )
+                    event = full_event
         for d in deliveries:
-            if d.get("message_id"):
+            adapter = self.adapters.get(d["channel"])
+            if adapter and d.get("message_id"):
                 try:
-                    self.telegram.update_alert(d, event)
+                    adapter.update_alert(d, event)
                 except Exception as e:
                     print(f"[NotificationManager] Не удалось обновить сообщение в чате {d['chat_id']}: {e}")
 
@@ -225,7 +288,7 @@ class NotificationManager:
                         inc.contact_role = "Оператор (Telegram)"
                     db.commit()
 
-            # Обновляем все Telegram сообщения (снимаем inline кнопки и обновляем статус)
+            # Refresh delivered notifications and remove channel-specific action controls.
             self.update_incident_status(event_id, db_status, operator_name)
 
             # Широковещательное обновление UI через WebSocket
@@ -265,15 +328,18 @@ class NotificationManager:
 
         sent = 0
         for s in subs:
-            if s["channel"] == "telegram":
-                if self._send_with_retry(self.telegram, s, test_event):
+            adapter = self.adapters.get(s["channel"])
+            if adapter and adapter.enabled:
+                if self._send_with_retry(adapter, s, test_event):
                     sent += 1
         return sent
 
     def info(self) -> dict:
         """Сводка состояния каналов и подписчиков."""
+        channels = {name: adapter.info() for name, adapter in self.adapters.items()}
         return {
-            "telegram": self.telegram.info(),
+            "telegram": channels["telegram"],
+            "channels": channels,
             "netio": {"configured": bool(self.netio)},
             "subscribers": self.store.list_subscribers(),
             "stats": self.store.delivery_stats(),

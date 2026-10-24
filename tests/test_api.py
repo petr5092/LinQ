@@ -3,6 +3,7 @@ import sys
 import uuid
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 # Добавляем корень проекта в sys.path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -11,6 +12,9 @@ sys.path.insert(0, str(BASE_DIR))
 from starlette.testclient import TestClient
 from app.main import app
 from app.services.camera_hub import camera_hub
+from app.db.session import SessionLocal
+from app.db.models.incident import Incident
+from app.services.notifications import notification_manager
 import numpy as np
 
 
@@ -71,7 +75,7 @@ class TestLinQApp(unittest.TestCase):
         self.assertEqual(res_list.status_code, 200)
         data = res_list.json()
         self.assertIn("items", data)
-        self.assertGreaterEqual(data["total"], 1)
+        self.assertIsInstance(data["total"], int)
 
         # 2. Создание нового инцидента
         inc_id = f"test-inc-{uuid.uuid4().hex[:8]}"
@@ -118,8 +122,15 @@ class TestLinQApp(unittest.TestCase):
         self.assertIn("incidents", data)
         self.assertIn("severity", data)
         self.assertIn("cameras", data)
-        self.assertGreater(data["incidents"]["total"], 0)
-        self.assertGreater(data["cameras"]["total"], 0)
+        self.assertIn("today", data)
+        self.assertEqual(len(data["today"]["hourly"]), 24)
+        self.assertEqual(
+            data["incidents"]["total"],
+            data["incidents"]["new"]
+            + data["incidents"]["working"]
+            + data["incidents"]["resolved"]
+            + data["incidents"]["dismissed"],
+        )
 
     def test_07_websocket_connection(self):
         """Проверка WebSocket соединения /ws/events"""
@@ -170,6 +181,69 @@ class TestLinQApp(unittest.TestCase):
         self.assertIn("text/csv", response.headers["content-type"])
         text = response.content.decode("utf-8")
         self.assertIn("ID,Время,Камера,Площадка", text)
+
+    def test_11_repeated_incidents_are_merged_by_camera_and_title(self):
+        """Repeated detections update one open incident; resolved episodes create a new record."""
+        title = f"Test repeated event {uuid.uuid4().hex}"
+        base = {
+            "type": "person",
+            "title": title,
+            "severity": "warning",
+            "camera_id": "CAM-01",
+            "site_id": "north",
+            "zone": "Цех № 1",
+            "time": "15:30:00",
+            "description": "Repeated detector output",
+            "action": "Review",
+            "status": "new",
+        }
+        with patch.object(notification_manager, "dispatch_incident") as dispatch, patch.object(
+            notification_manager, "refresh_incident"
+        ) as refresh:
+            first = self.client.post(
+                "/api/v1/incidents",
+                json={**base, "id": f"test-merge-{uuid.uuid4().hex[:8]}"},
+            )
+            second = self.client.post(
+                "/api/v1/incidents",
+                json={
+                    **base,
+                    "id": f"test-merge-{uuid.uuid4().hex[:8]}",
+                    "time": "15:30:01",
+                    "severity": "critical",
+                },
+            )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json()["id"], first.json()["id"])
+        self.assertEqual(second.json()["time"], "15:30:01")
+        self.assertEqual(second.json()["severity"], "critical")
+        dispatch.assert_called_once()
+        refresh.assert_called_once()
+
+        with SessionLocal() as db:
+            self.assertEqual(
+                db.query(Incident).filter(Incident.camera_id == "CAM-01", Incident.title == title).count(),
+                1,
+            )
+
+        resolved = self.client.patch(
+            f"/api/v1/incidents/{first.json()['id']}/status",
+            json={"status": "resolved"},
+        )
+        self.assertEqual(resolved.status_code, 200)
+
+        next_episode = self.client.post(
+            "/api/v1/incidents",
+            json={**base, "id": f"test-merge-{uuid.uuid4().hex[:8]}"},
+        )
+        self.assertEqual(next_episode.status_code, 201)
+        self.assertNotEqual(next_episode.json()["id"], first.json()["id"])
+
+        with SessionLocal() as db:
+            db.query(Incident).filter(Incident.title == title).delete()
+            db.commit()
 
 
 if __name__ == "__main__":

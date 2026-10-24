@@ -128,12 +128,14 @@ class EndToEnd(unittest.TestCase):
         self.zones_path = os.path.join(self.td.name, "zones.json")
 
     def tearDown(self):
+        if hasattr(self, "store"):
+            self.store.db.close()
         self.td.cleanup()
 
     def test_scenario_gives_one_alert_per_violation(self):
         zs = store.ZoneStore(self.zones_path)
         zs.set("c", [{"name": "Склад", "points": sources.DEFAULT_ZONE}])
-        st = store.EventStore(self.db_path)
+        st = self.store = store.EventStore(self.db_path)
         w = pipeline.CameraWorker("c", sources.SyntheticSource(realtime=False, max_frames=1200),
                                   detector.MockDetector(), st, hub.Hub(), zs)
         evs = []
@@ -142,7 +144,7 @@ class EndToEnd(unittest.TestCase):
         kinds = sorted(e["type"] for e in evs)
         self.assertEqual(kinds, sorted(["fall", "no_helmet", "phone", "restricted_zone"] * 2))   # 2 цикла по 60 с
         self.assertTrue(all(e["latency_ms"] < 200 for e in evs))
-        self.assertEqual(len(st.query(type="fall")), 2)
+        self.assertEqual(len(st.query(type="fall")), 1)
         eid = st.query()[0]["id"]
         self.assertEqual(st.set_status(eid, "false")["status"], "false")
         self.assertIsNone(st.set_status(eid, "bogus"))
