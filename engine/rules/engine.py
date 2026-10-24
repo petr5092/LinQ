@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 from engine.rules.base import BaseRule, FrameContext, RuleViolation
-from engine.tracking.types import TrackedObject
+from engine.tracking.types import TrackedObject, TrackState
 
 
 class RulesEngine:
@@ -33,6 +33,10 @@ class RulesEngine:
     def get_rule(self, rule_name: str) -> Optional[BaseRule]:
         return self.rules.get(rule_name)
 
+    def reset(self) -> None:
+        for rule in self.rules.values():
+            rule.reset()
+
     def evaluate(self, tracks: List[TrackedObject], context: FrameContext) -> List[RuleViolation]:
         """
         Запуск всех активных правил на текущем кадре.
@@ -41,6 +45,8 @@ class RulesEngine:
         :return: агрегированный список всех выявленных нарушений
         """
         all_violations: List[RuleViolation] = []
+        tracks = [track for track in tracks if track.time_since_update == 0
+                  and track.state not in (TrackState.LOST, TrackState.REMOVED)]
 
         for rule in list(self.rules.values()):
             if not rule.is_enabled:

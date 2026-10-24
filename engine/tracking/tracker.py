@@ -56,10 +56,7 @@ class STrack:
         if len(self.history) > 100:
             self.history.pop(0)
 
-        if self.state == TrackState.NEW and self.hits >= 2:
-            self.state = TrackState.TRACKED
-            self.is_confirmed = True
-        elif self.state == TrackState.LOST:
+        if self.state == TrackState.LOST:
             self.state = TrackState.TRACKED
 
     def mark_lost(self) -> None:
@@ -143,11 +140,16 @@ class ByteTracker:
                 dets_low.append(d)
 
         # 2. Предсказание положения всех существующих треков через фильтр Калмана
-        all_active_tracks = self.tracked_stracks + self.unconfirmed_stracks
+        # Lost tracks remain eligible for high-confidence reassociation until
+        # their retention window expires. Never emit a predicted-only box.
+        all_active_tracks = self.tracked_stracks + self.unconfirmed_stracks + self.lost_stracks
         for track in all_active_tracks:
             track.predict()
-        for track in self.lost_stracks:
-            track.predict()
+
+        all_active_tracks = [
+            track for track in all_active_tracks
+            if track.state != TrackState.LOST or track.time_since_update <= self.max_lost_frames
+        ]
 
         # 3. Первый этап ассоциации: сопоставление high-conf детекций с активными треками
         matched_a, unmatched_tracks_a, unmatched_dets_high = self._associate(
@@ -243,10 +245,10 @@ class ByteTracker:
             track_box = BoundingBox(*track.kalman.get_state())
             for d_idx, det in enumerate(detections):
                 iou = track_box.iou(det.bbox)
-                # Если классы не совпадают, штрафуем совпадение
-                if track.class_id != det.class_id:
-                    iou *= 0.5
-                cost_matrix[t_idx, d_idx] = 1.0 - iou
+                # Track identity cannot change from person to equipment/PPE.
+                cost_matrix[t_idx, d_idx] = (
+                    1.0 - iou if track.class_id == det.class_id else np.inf
+                )
 
         matched_tracks: List[int] = []
         matched_dets: List[int] = []
@@ -259,7 +261,7 @@ class ByteTracker:
         for r, c in zip(rows, cols):
             if r in matched_tracks or c in matched_dets:
                 continue
-            if cost_matrix[r, c] > (1.0 - iou_distance_thresh):
+            if cost_matrix[r, c] > iou_distance_thresh:
                 continue
             matched_tracks.append(int(r))
             matched_dets.append(int(c))

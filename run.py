@@ -1,6 +1,6 @@
 """
 Единая точка входа для запуска LinQ Safety Guard:
-    python run.py                                     # Демо на синтетических камерах без модели
+    python run.py                                     # Только FastAPI; CV запускается отдельно
     python run.py --backend onnx --model best.onnx    # Запуск с локальной ONNX моделью
     python run.py --backend linq --model program.tpu  # Запуск на аппаратном чипе LinQ TPU
 """
@@ -17,9 +17,9 @@ from run_worker import main as worker_main
 if __name__ == "__main__":
     # Если переданы аргументы командной строки воркера — запускаем воркер
     if len(sys.argv) > 1 and any(arg in sys.argv for arg in ("--source", "--backend", "--model", "--web")):
-        worker_main()
+        raise SystemExit(worker_main())
     else:
-        # По умолчанию запускаем FastAPI сервер и воркер синтетических камер
+        # По умолчанию запускаем только FastAPI сервер.
         from app.main import app
         from app.config import settings
         print(f"=== Запуск LinQ Safety Guard API на http://{settings.HOST}:{settings.PORT} ===")

@@ -32,23 +32,28 @@ class AntiSpamEngine:
         debounce_frames: int = 10,       # Количество кадров подтверждения (~0.4-1.0 сек)
         cooldown_seconds: float = 300.0,  # Защитный интервал тишины на один инцидент (5 минут)
         resolve_frames: int = 25,         # Кадров отсутствия нарушения для перевода в RESOLVED (~1.0 сек)
+        debounce_seconds: float = 0.0,
     ) -> None:
+        if debounce_frames < 1 or resolve_frames < 1 or cooldown_seconds < 0 or debounce_seconds < 0:
+            raise ValueError("Debounce/resolve frames must be positive; time intervals must be nonnegative")
         self.debounce_frames = debounce_frames
         self.cooldown_seconds = cooldown_seconds
         self.resolve_frames = resolve_frames
+        self.debounce_seconds = debounce_seconds
 
         # Кандидаты, ожидающие подтверждения: key -> _ViolationCandidate
-        self._candidates: Dict[Tuple[str, str, int], _ViolationCandidate] = {}
+        self._candidates: Dict[Tuple[str, str, str, int], _ViolationCandidate] = {}
 
         # Активные подтвержденные инциденты: key -> ConfirmedIncident
-        self._active_incidents: Dict[Tuple[str, str, int], ConfirmedIncident] = {}
+        self._active_incidents: Dict[Tuple[str, str, str, int], ConfirmedIncident] = {}
 
         # Время последнего оповещения для кулдауна: key -> float (timestamp)
-        self._last_alert_time: Dict[Tuple[str, str, int], float] = {}
+        self._last_alert_time: Dict[Tuple[str, str, str, int], float] = {}
+        self._missed_frames: Dict[Tuple[str, str, str, int], int] = {}
 
     @staticmethod
-    def _make_key(violation: RuleViolation) -> Tuple[str, str, int]:
-        return (violation.camera_id, violation.rule_name, violation.track_id)
+    def _make_key(violation: RuleViolation) -> Tuple[str, str, str, int]:
+        return (violation.camera_id, violation.rule_name, violation.rule_id, violation.track_id)
 
     def process(
         self,
@@ -63,13 +68,25 @@ class AntiSpamEngine:
                  алерта и список всех текущих активных инцидентов.
         """
         now = context.timestamp
-        seen_keys: Set[Tuple[str, str, int]] = set()
+        seen_keys: Set[Tuple[str, str, str, int]] = set()
         newly_confirmed: List[ConfirmedIncident] = []
+
+        # Expire only completed incidents: a continuous violation remains one
+        # incident even when it lasts longer than cooldown_seconds.
+        for key, incident in list(self._active_incidents.items()):
+            if (key[0] == context.camera_id and incident.state == IncidentState.RESOLVED
+                    and now - self._last_alert_time[key] >= self.cooldown_seconds):
+                self._active_incidents.pop(key)
+                self._last_alert_time.pop(key)
+                self._missed_frames.pop(key, None)
 
         # 1. Обработка поступивших нарушений
         for v in violations:
             key = self._make_key(v)
+            if key in seen_keys:
+                continue  # Multiple detections in one frame are not a streak.
             seen_keys.add(key)
+            self._missed_frames.pop(key, None)
 
             # Проверяем, не находится ли инцидент уже в активном состоянии под кулдауном
             if key in self._active_incidents:
@@ -77,10 +94,13 @@ class AntiSpamEngine:
                 active_inc.last_seen_at = now
                 active_inc.duration_seconds = max(0.0, now - active_inc.first_seen_at)
                 active_inc.bbox = v.bbox
-                active_inc.metadata = v.metadata
+                active_inc.metadata = dict(v.metadata)
+                active_inc.description = v.description
+                active_inc.severity = v.severity
                 # Сбрасываем флаг завершения, если нарушение возобновилось
                 if active_inc.state == IncidentState.RESOLVED:
                     active_inc.state = IncidentState.ACTIVE
+                    active_inc.resolved_at = None
                 continue
 
             # Проверяем кулдаун от предыдущего закрытого инцидента по этому же треку
@@ -106,7 +126,8 @@ class AntiSpamEngine:
                 self._candidates[key] = cand
 
             # Проверка достижения порога debounce
-            if cand.streak_count >= self.debounce_frames:
+            if (cand.streak_count >= self.debounce_frames
+                    and now - cand.first_seen_at >= self.debounce_seconds):
                 # ПОДТВЕРЖДЕНО: порождаем новый инцидент
                 confirmed = ConfirmedIncident(
                     rule_name=v.rule_name,
@@ -136,35 +157,23 @@ class AntiSpamEngine:
         # 2. Обработка пропущенных кандидатов (сброс дребезга)
         stale_candidates = []
         for key, cand in self._candidates.items():
-            if key not in seen_keys:
-                cand.missed_count += 1
-                if cand.missed_count >= 5:  # если нарушитель исчез на 5 кадров, сбрасываем кандидат
-                    stale_candidates.append(key)
+            if key[0] == context.camera_id and key not in seen_keys:
+                stale_candidates.append(key)
 
         for key in stale_candidates:
             del self._candidates[key]
 
         # 3. Обработка активных инцидентов, которые перестали наблюдаться (перевод в RESOLVED)
-        resolved_keys = []
         for key, active_inc in self._active_incidents.items():
-            if key not in seen_keys:
-                # Сколько времени прошло с последнего появления
-                time_since_seen = now - active_inc.last_seen_at
-                # Если не видно более 2 секунд, фиксируем завершение
-                if active_inc.state != IncidentState.RESOLVED and time_since_seen > (self.resolve_frames / context.fps):
+            if key[0] == context.camera_id and key not in seen_keys:
+                self._missed_frames[key] = self._missed_frames.get(key, 0) + 1
+                if active_inc.state != IncidentState.RESOLVED and self._missed_frames[key] >= self.resolve_frames:
                     active_inc.state = IncidentState.RESOLVED
                     active_inc.resolved_at = active_inc.last_seen_at
                     active_inc.duration_seconds = max(0.0, active_inc.last_seen_at - active_inc.first_seen_at)
 
-            # Очистка из памяти после истечения полного кулдауна
-            if now - self._last_alert_time.get(key, 0.0) >= self.cooldown_seconds:
-                resolved_keys.append(key)
-
-        for key in resolved_keys:
-            self._active_incidents.pop(key, None)
-            self._last_alert_time.pop(key, None)
-
-        all_active = list(self._active_incidents.values())
+        all_active = [incident for key, incident in self._active_incidents.items()
+                      if key[0] == context.camera_id and incident.state != IncidentState.RESOLVED]
         return newly_confirmed, all_active
 
     def reset(self) -> None:
@@ -172,3 +181,4 @@ class AntiSpamEngine:
         self._candidates.clear()
         self._active_incidents.clear()
         self._last_alert_time.clear()
+        self._missed_frames.clear()

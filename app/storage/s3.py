@@ -74,6 +74,9 @@ class S3StorageProvider(BaseStorageProvider):
         incident_id: str,
         camera_id: str
     ) -> str:
+        return self.get_snapshot_url(self.save_snapshot_key(image_data, incident_id, camera_id))
+
+    def save_snapshot_key(self, image_data, incident_id: str, camera_id: str) -> str:
         date_folder = datetime.utcnow().strftime("%Y-%m-%d")
         file_key = f"snapshots/{date_folder}/inc_{incident_id}_{camera_id}.jpg"
 
@@ -102,7 +105,7 @@ class S3StorageProvider(BaseStorageProvider):
             ContentType="image/jpeg"
         )
 
-        return self.get_snapshot_url(file_key)
+        return file_key
 
     def get_snapshot_url(self, file_key: str) -> str:
         # Если задан прямой публичный URL или CDN

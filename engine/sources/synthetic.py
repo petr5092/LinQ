@@ -137,10 +137,11 @@ class SyntheticSource(BaseVideoSource):
     def __iter__(self) -> Generator[Tuple[np.ndarray, float], None, None]:
         i = 0
         t0 = time.perf_counter()
+        epoch_start = time.time()
         while not self._stop and (self.max_frames is None or i < self.max_frames):
             sim_t = i / self.fps
             frame_bgr = render_scene((sim_t + self.phase) % SCENARIO_PERIOD, self.width, self.height)
-            now = time.time()
+            now = epoch_start + sim_t
             yield frame_bgr, now
 
             i += 1
@@ -148,4 +149,4 @@ class SyntheticSource(BaseVideoSource):
                 target_time = t0 + i / self.fps
                 delay = target_time - time.perf_counter()
                 if delay > 0:
-                    time.sleep(delay)
+                    self.wait(delay)

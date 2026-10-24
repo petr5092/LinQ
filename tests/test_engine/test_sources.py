@@ -188,9 +188,8 @@ def test_create_video_source_all_branches(tmp_path: Path):
     assert isinstance(s2, SyntheticSource)
     assert s2.phase == 12.5
 
-    s3 = create_video_source("synthetic:bad_val", realtime=False)
-    assert isinstance(s3, SyntheticSource)
-    assert s3.phase == 0.0
+    with pytest.raises(ValueError):
+        create_video_source("synthetic:bad_val", realtime=False)
 
     # 2. RTSP и HTTP
     rtsp = create_video_source("rtsp://admin:pass@192.168.1.10:554/h264")
@@ -219,6 +218,6 @@ def test_create_video_source_all_branches(tmp_path: Path):
     vid_src = create_video_source(str(v_file), realtime=False)
     assert isinstance(vid_src, VideoFileSource)
 
-    # 5. Неизвестная строка -> фоллбэк на синтетику
-    fb_src = create_video_source("unknown_nonexistent_stream", realtime=False)
-    assert isinstance(fb_src, SyntheticSource)
+    # A mistyped production source must not silently become a demo feed.
+    with pytest.raises(ValueError):
+        create_video_source("unknown_nonexistent_stream", realtime=False)

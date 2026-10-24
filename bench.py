@@ -1,113 +1,124 @@
-"""
-Замер производительности инференса нейросети на LinQ TPU и ONNX Runtime:
-    python bench.py --backend onnx --model models/onnx/best.onnx --frames 200
-    python bench.py --backend linq --model models/tpu/best.tpu --frames 300
-    python bench.py --backend mock --frames 100
-
-Результат выводится в консоль и сохраняется в bench_results.json.
-"""
-
-from __future__ import annotations
-
+"""Reproducible single-stream inference benchmark; not a multi-camera capacity test."""
 import argparse
+from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
-import statistics as st
+import platform
+import statistics
 import time
 
+from dotenv import load_dotenv
+from engine.config import ROOT, inference_options, load_config
 from engine.inference.factory import create_inference_engine
-from engine.sources.synthetic import SyntheticSource
+from engine.sources.factory import create_video_source
 
 
-def percentile(data: list[float], p: float) -> float:
-    """Расчет p-го процентиля."""
+def percentile(data, p):
     if not data:
-        return 0.0
-    sorted_data = sorted(data)
-    idx = min(len(sorted_data) - 1, int(len(sorted_data) * p / 100.0))
-    return sorted_data[idx]
+        raise ValueError('Cannot compute a percentile without measurements')
+    values = sorted(data)
+    position = (len(values) - 1) * p / 100
+    lo = int(position)
+    hi = min(lo + 1, len(values) - 1)
+    return values[lo] + (values[hi] - values[lo]) * (position - lo)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Бенчмарк инференса LinQ TPU / ONNX Runtime")
-    parser.add_argument("--backend", default="mock", choices=["mock", "onnx", "linq", "onnx_cpu", "linq_tpu"],
-                        help="Бэкенд вычислений (linq = LinQ TPU H1M, onnx = ONNX Runtime CPU, mock = эмуляция)")
-    parser.add_argument("--model", default=None, help="Путь к файлу скомпилированной модели (.tpu или .onnx)")
-    parser.add_argument("--frames", type=int, default=200, help="Количество кадров для тестового прогона")
-    parser.add_argument("--warmup", type=int, default=10, help="Количество кадров прогрева")
-    parser.add_argument("--target-fps", type=float, default=10.0, help="Целевая частота кадров на одну камеру")
-    parser.add_argument("--out", default="bench_results.json", help="Путь к результирующему JSON-файлу")
-    args = parser.parse_args()
+def latency_summary(values):
+    return {key: round(value, 3) for key, value in {
+        'mean': statistics.mean(values), 'p50': percentile(values, 50),
+        'p95': percentile(values, 95), 'min': min(values), 'max': max(values),
+    }.items()}
 
-    # Нормализуем имя бэкенда для фабрики
-    backend_map = {
-        "linq": "linq_tpu",
-        "linq_tpu": "linq_tpu",
-        "onnx": "onnx_cpu",
-        "onnx_cpu": "onnx_cpu",
-        "mock": "mock",
-    }
-    backend_name = backend_map.get(args.backend.lower(), "mock")
 
-    print(f"=== Инициализация движка {backend_name} (модель: {args.model}) ===")
-    engine = create_inference_engine(
-        backend=backend_name,
-        model_path=args.model,
-    )
-
-    print(f"Генерация синтетических тестовых кадров (прогрев: {args.warmup}, замер: {args.frames})...")
-    source = SyntheticSource(fps=30.0, realtime=False, max_frames=args.frames + args.warmup)
-
-    total_times_ms: list[float] = []
-    infer_times_ms: list[float] = []
-    pre_times_ms: list[float] = []
-    post_times_ms: list[float] = []
-
-    for i, (frame, _) in enumerate(source):
-        t0 = time.perf_counter()
-        result = engine.infer(frame)
-        t_total = (time.perf_counter() - t0) * 1000.0
-
-        if i >= args.warmup:
-            total_times_ms.append(t_total)
-            infer_times_ms.append(result.metrics.inference_time_ms)
-            pre_times_ms.append(result.metrics.preprocess_time_ms)
-            post_times_ms.append(result.metrics.postprocess_time_ms)
-
-    mean_total = st.mean(total_times_ms) if total_times_ms else 1e-3
-    throughput_fps = 1000.0 / max(mean_total, 1e-3)
-
-    summary = {
-        "backend": getattr(engine, "name", getattr(engine, "backend_name", engine.__class__.__name__)),
-        "is_emulated": getattr(engine, "is_emulated", False),
-        "model_path": args.model,
-        "frames_evaluated": len(total_times_ms),
-        "total_latency_ms": {
-            "mean": round(mean_total, 2),
-            "p50": round(percentile(total_times_ms, 50), 2),
-            "p95": round(percentile(total_times_ms, 95), 2),
-            "min": round(min(total_times_ms), 2) if total_times_ms else 0.0,
-            "max": round(max(total_times_ms), 2) if total_times_ms else 0.0,
-        },
-        "stages_mean_ms": {
-            "preprocess": round(st.mean(pre_times_ms), 2) if pre_times_ms else 0.0,
-            "inference": round(st.mean(infer_times_ms), 2) if infer_times_ms else 0.0,
-            "postprocess": round(st.mean(post_times_ms), 2) if post_times_ms else 0.0,
-        },
-        "throughput_fps": round(throughput_fps, 1),
-        "target_fps_per_camera": args.target_fps,
-        "max_concurrent_cameras": int(throughput_fps // args.target_fps) if args.target_fps > 0 else 0,
-        "note": "Режим эмуляции (без физического TPU)" if getattr(engine, "is_emulated", False) or backend_name == "mock" else "Аппаратный замер на LinQ TPU",
+def run_benchmark(engine, source, frames, warmup, source_spec):
+    if frames <= 0 or warmup < 0:
+        raise ValueError('frames must be positive and warmup nonnegative')
+    totals, inference, preprocess, postprocess, with_decode = [], [], [], [], []
+    iterator = iter(source)
+    backend = None
+    try:
+        for index in range(frames + warmup):
+            start = time.perf_counter()
+            try:
+                frame, _ = next(iterator)
+            except StopIteration:
+                break
+            decoded = time.perf_counter()
+            result = engine.infer(frame)
+            done = time.perf_counter()
+            if backend is not None and backend != result.metrics.backend_name:
+                raise RuntimeError('Backend changed during benchmark')
+            backend = result.metrics.backend_name
+            if index >= warmup:
+                totals.append((done - decoded) * 1000)
+                with_decode.append((done - start) * 1000)
+                inference.append(result.metrics.inference_time_ms)
+                preprocess.append(result.metrics.preprocess_time_ms)
+                postprocess.append(result.metrics.postprocess_time_ms)
+    finally:
+        source.stop()
+        if hasattr(iterator, 'close'):
+            iterator.close()
+        engine.close()
+    if not totals:
+        raise ValueError('No measured frames: source must contain more frames than warmup')
+    model_path = getattr(engine, 'model_path', None)
+    checksum = None
+    if model_path and Path(model_path).is_file():
+        with open(model_path, 'rb') as stream:
+            checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+    is_mock = backend == 'MOCK' or bool(getattr(engine, 'is_emulated', False))
+    return {
+        'recorded_at_utc': datetime.now(timezone.utc).isoformat(),
+        'backend': backend, 'is_emulated': is_mock,
+        'model_path': model_path, 'model_sha256': checksum,
+        'input_size_wh': list(engine.input_size), 'class_names': engine.class_names,
+        'source': source_spec, 'synthetic_input': source_spec.startswith('synthetic'),
+        'frames_requested': frames, 'frames_evaluated': len(totals), 'warmup_frames': warmup,
+        'complete': len(totals) == frames,
+        'inference_call_latency_ms': latency_summary(inference),
+        'preprocess_mean_ms': statistics.mean(preprocess),
+        'postprocess_mean_ms': statistics.mean(postprocess),
+        'total_latency_ms': latency_summary(totals),
+        'decode_and_inference_latency_ms': latency_summary(with_decode),
+        'throughput_fps': 1000 / statistics.mean(totals),
+        'decode_and_inference_fps': 1000 / statistics.mean(with_decode),
+        'python': platform.python_version(), 'platform': platform.platform(),
+        'note': ('MOCK: synthetic detections; no model or hardware evidence' if is_mock else
+                 'ONNX Runtime CPU inference' if backend == 'ONNX_CPU' else
+                 'LinQ adapter call including transfers and synchronization; verify physical hardware on the stand'),
+        'scope': 'Single stream. Excludes tracking, rules, storage, network delivery and GUI latency. Does not prove multi-camera capacity.',
     }
 
-    print("\n=== Результаты замера производительности ===")
+
+def main(argv=None):
+    load_dotenv(ROOT / '.env')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--config')
+    parser.add_argument('--backend', default='mock', choices=['mock', 'onnx', 'linq', 'onnx_cpu', 'linq_tpu'])
+    parser.add_argument('--model')
+    parser.add_argument('--source', default='synthetic')
+    parser.add_argument('--frames', type=int, default=200)
+    parser.add_argument('--warmup', type=int, default=10)
+    parser.add_argument('--out', default='bench_results.json')
+    args = parser.parse_args(argv)
+    if args.frames <= 0 or args.warmup < 0:
+        parser.error('--frames must be positive and --warmup nonnegative')
+    config = load_config(args.config)
+    engine = create_inference_engine(**inference_options(config, args.backend, args.model))
+    try:
+        source = create_video_source(args.source, realtime=False, loop=False)
+    except Exception:
+        engine.close()
+        raise
+    summary = run_benchmark(engine, source, args.frames, args.warmup, args.source)
+    output = Path(args.out)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
-
-    print(f"\nОтчет сохранен в файл: {args.out}")
+    return 0
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    raise SystemExit(main())

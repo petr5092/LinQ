@@ -33,6 +33,9 @@ class LocalStorageProvider(BaseStorageProvider):
         incident_id: str,
         camera_id: str
     ) -> str:
+        return self.get_snapshot_url(self.save_snapshot_key(image_data, incident_id, camera_id))
+
+    def save_snapshot_key(self, image_data, incident_id: str, camera_id: str) -> str:
         date_folder = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         target_dir = os.path.join(self.base_dir, date_folder)
         os.makedirs(target_dir, exist_ok=True)
@@ -62,7 +65,7 @@ class LocalStorageProvider(BaseStorageProvider):
 
         # Относительный ключ для БД и отдачи через FastAPI
         rel_key = f"{date_folder}/{filename}"
-        return self.get_snapshot_url(rel_key)
+        return rel_key
 
     def get_snapshot_url(self, file_key: str) -> str:
         clean_key = file_key.lstrip("/")

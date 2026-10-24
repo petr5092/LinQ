@@ -51,6 +51,9 @@ linq_resources/
 data/*.db
 data/*.sqlite3
 data/*.sqlite
+data/cv_outbox/
+data/*_outbox/
+data/cv_*.jsonl
 !data/.gitkeep
 !data/.gitignore
 bench_results.json

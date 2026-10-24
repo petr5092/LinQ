@@ -1,214 +1,153 @@
-"""
-Автономный запуск CV Worker (обработка видеопотоков на LinQ TPU / ONNX):
-    python run_worker.py --backend mock --source synthetic
-    python run_worker.py --backend onnx_cpu --model models/onnx/yolov8n.onnx --source rtsp://camera_ip/h264
-    python run_worker.py --backend linq_tpu --model models/tpu/safety.tpu --source storage/demo_videos/gate.mp4
-"""
-
+"""Standalone CV worker. Run the FastAPI service in a separate process."""
 from __future__ import annotations
 
 import argparse
-import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 import os
-import signal
-import sys
+from pathlib import Path
 import threading
-import time
-from typing import List, Optional
-import cv2
 
-from app.config import settings, BASE_DIR
-from app.db.session import SessionLocal
-from app.db.models.incident import Incident
-from app.services.camera_hub import camera_hub
-from app.services.notifications import notification_manager
-from app.storage.factory import get_storage_provider
+from dotenv import load_dotenv
+from app.storage.local import LocalStorageProvider
+from engine.config import ROOT, build_rules, inference_options, load_config
 from engine.deduplication.anti_spam import AntiSpamEngine
+from engine.incident_client import IncidentClient
 from engine.inference.factory import create_inference_engine
 from engine.pipeline import CVPipeline
-from engine.rules.danger_zone import DangerZoneRule, ZoneDefinition
-from engine.rules.engine import RulesEngine
-from engine.rules.fall_detection import FallDetectionRule
-from engine.rules.phone_usage import PhoneUsageRule
-from engine.rules.ppe_compliance import PPEComplianceRule
-from engine.rules.proximity import ProximityRule
 from engine.sources.factory import create_video_source
 from engine.tracking.tracker import ByteTracker
 
-
-def build_default_rules_engine() -> RulesEngine:
-    """Сборка движка правил со всеми сценариями контроля ТБ."""
-    rules_engine = RulesEngine()
-
-    # 1. Опасная зона погрузчика
-    zone = ZoneDefinition(
-        zone_id="dz_forklift",
-        name="Зона работы погрузчика",
-        polygon=[(396.0, 198.0), (608.0, 198.0), (608.0, 342.0), (396.0, 342.0)],
-        forbidden_classes=["person"],
-    )
-    rules_engine.add_rule(DangerZoneRule(zones=[zone]))
-
-    # 2. Контроль СИЗ (каска и сигнальный жилет)
-    rules_engine.add_rule(PPEComplianceRule(require_helmet=True, require_vest=True))
-
-    # 3. Контроль падения и неподвижности
-    rules_engine.add_rule(FallDetectionRule())
-
-    # 4. Контроль использования смартфона в цеху
-    rules_engine.add_rule(PhoneUsageRule())
-
-    # 5. Опасное сближение рабочего с техникой (< 2.5 м)
-    rules_engine.add_rule(ProximityRule())
-
-    return rules_engine
+log = logging.getLogger('linq.worker')
 
 
-def run_camera_worker(
-    camera_id: str,
-    source_spec: str,
-    backend: str,
-    model_path: Optional[str],
-    stop_event: threading.Event,
-) -> None:
-    """Воркер обработки видеопотока конкретной камеры."""
-    print(f"[{camera_id}] Запуск источника '{source_spec}' с бэкендом '{backend}'...")
-    source = create_video_source(source_spec, realtime=True)
-    inference_engine = create_inference_engine(backend=backend, model_path=model_path)
-    tracker = ByteTracker(min_hits_to_confirm=1)
-    rules_engine = build_default_rules_engine()
-    anti_spam = AntiSpamEngine(
-        debounce_frames=settings.DEBOUNCE_FRAMES,
-        cooldown_seconds=settings.COOLDOWN_SECONDS,
-    )
-    storage_provider = get_storage_provider()
-
-    def on_incident(incident, frame_bgr):
-        print(f"[{camera_id}] 🚨 ОБНАРУЖЕН ИНЦИДЕНТ: {incident.rule_name} (трек #{incident.track_id})")
-        # Сохранение в БД
-        try:
-            with SessionLocal() as db:
-                db_inc = Incident(
-                    id=incident.incident_id,
-                    camera_id=camera_id,
-                    incident_type=incident.rule_name,
-                    severity=incident.severity.value if hasattr(incident.severity, "value") else str(incident.severity),
-                    status="new",
-                    snapshot_url=incident.snapshot_path,
-                    bounding_boxes={"bbox": incident.bbox.as_xyxy()} if incident.bbox else None,
-                    rule_params={"zone_id": incident.zone_id, "track_id": incident.track_id},
-                )
-                db.add(db_inc)
-                db.commit()
-        except Exception as e:
-            print(f"[{camera_id}] Предупреждение записи инцидента в БД: {e}")
-
-        # Рассылка в Telegram / внешние оповещения
-        inc_data = {
-            "id": incident.incident_id,
-            "rule_name": incident.rule_name,
-            "rule_label": incident.description or incident.rule_name,
-            "severity": incident.severity.value if hasattr(incident.severity, "value") else str(incident.severity),
-            "camera_id": camera_id,
-            "camera_name": camera_id,
-            "zone_id": incident.zone_id,
-            "status": "new",
-        }
-        abs_snap = None
-        if incident.snapshot_path:
-            rel = incident.snapshot_path.replace("/static/snapshots/", "").lstrip("/\\")
-            cand_abs = os.path.join(str(settings.LOCAL_SNAPSHOTS_DIR), rel)
-            if os.path.isfile(cand_abs):
-                abs_snap = cand_abs
-
-        notification_manager.dispatch_incident(inc_data, abs_snap)
-
-    pipeline = CVPipeline(
-        inference_engine=inference_engine,
-        tracker=tracker,
-        rules_engine=rules_engine,
-        anti_spam_engine=anti_spam,
-        storage_provider=storage_provider,
-        incident_callback=on_incident,
-        camera_id=camera_id,
-    )
-
-    camera_hub.set_camera_state(camera_id, "online")
-
-    frame_count = 0
-    t_start = time.perf_counter()
-
-    for frame_bgr, ts in source:
-        if stop_event.is_set():
-            break
-
-        res = pipeline.process_frame(frame_bgr, timestamp=ts)
-        camera_hub.set_frame(camera_id, frame_bgr)
-
-        frame_count += 1
-        if frame_count % 10 == 0:
-            elapsed = time.perf_counter() - t_start
-            cur_fps = 10.0 / elapsed if elapsed > 0 else 0.0
-            t_start = time.perf_counter()
-            camera_hub.update_metrics(
-                camera_id=camera_id,
-                fps=cur_fps,
-                detect_time_ms=res.metrics.inference_time_ms,
-                latency_ms=res.metrics.total_time_ms,
-            )
-
-    camera_hub.set_camera_state(camera_id, "stopped")
-    print(f"[{camera_id}] Поток завершен.")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Запуск CV Worker аналитики ТБ LinQ Safety Guard")
-    parser.add_argument("--source", action="append", help="Источник видео (synthetic, synthetic:30, rtsp://..., файл.mp4)")
-    parser.add_argument("--backend", default=None, choices=["linq_tpu", "onnx_cpu", "mock"],
-                        help="Вычислительный бэкенд инференса (по умолчанию из .env)")
-    parser.add_argument("--model", default=None, help="Путь к файлу нейросети (.tpu или .onnx)")
-    parser.add_argument("--web", action="store_true", help="Запустить веб-сервер FastAPI параллельно с воркером")
-    parser.add_argument("--port", type=int, default=8000, help="Порт веб-сервера")
-    args = parser.parse_args()
-
-    backend = args.backend or settings.INFERENCE_BACKEND.lower()
-    model = args.model or (settings.TPU_MODEL_PATH if "tpu" in backend else settings.ONNX_MODEL_PATH)
-    sources = args.source or ["synthetic", "synthetic:30"]
-
-    stop_event = threading.Event()
-    threads = []
-
-    notification_manager.start()
-
-    for idx, src_spec in enumerate(sources, 1):
-        cam_id = f"cam_{idx:02d}"
-        t = threading.Thread(
-            target=run_camera_worker,
-            args=(cam_id, src_spec, backend, model, stop_event),
-            daemon=True,
-            name=f"worker_{cam_id}",
+def run_camera_worker(camera, config, options, stop_event, sink, max_frames=None, realtime=True, loop=False):
+    source = None
+    engine = None
+    frames = None
+    try:
+        engine = create_inference_engine(**options)
+        rules = build_rules(config, camera, engine.class_names)
+        source = create_video_source(camera['source'], realtime=realtime, loop=loop)
+        source.stop_event = stop_event
+        tracking = dict(config.get('tracking', {}))
+        algorithm = tracking.pop('algorithm', 'bytetrack')
+        if algorithm != 'bytetrack':
+            raise ValueError(f'Unknown tracker: {algorithm}')
+        for long_name, short_name in [('high_threshold', 'high_thresh'), ('low_threshold', 'low_thresh'),
+                                     ('match_threshold_high', 'match_thresh_high'), ('match_threshold_low', 'match_thresh_low')]:
+            if long_name in tracking:
+                tracking[short_name] = tracking.pop(long_name)
+        anti_spam = dict(config.get('deduplication', {}))
+        for env_key, option, cast in [('DEBOUNCE_FRAMES', 'debounce_frames', int),
+                                     ('COOLDOWN_SECONDS', 'cooldown_seconds', float)]:
+            if env_key in os.environ:
+                anti_spam[option] = cast(os.environ[env_key])
+        pipeline = CVPipeline(
+            inference_engine=engine, tracker=ByteTracker(**tracking), rules_engine=rules,
+            anti_spam_engine=AntiSpamEngine(**anti_spam),
+            storage_provider=LocalStorageProvider(str(ROOT / 'storage' / 'snapshots')),
+            incident_callback=lambda event, image: sink.submit(event, image, camera),
+            camera_id=camera['camera_id'],
         )
-        t.start()
-        threads.append(t)
+        log.info('%s: backend=%s source=%s', camera['camera_id'], options['backend'], camera['source'])
+        frames = iter(source)
+        count = 0
+        sequence_id = getattr(source, 'sequence_id', 0)
+        for frame, timestamp in frames:
+            if stop_event.is_set():
+                break
+            next_sequence = getattr(source, 'sequence_id', 0)
+            if next_sequence != sequence_id:
+                pipeline.reset()
+                sequence_id = next_sequence
+            result = pipeline.process_frame(frame, timestamp=timestamp, source_fps=source.fps)
+            count += 1
+            if result.new_incidents:
+                log.info('%s: %d confirmed incidents queued', camera['camera_id'], len(result.new_incidents))
+            if max_frames and count >= max_frames:
+                break
+        if count == 0 and not stop_event.is_set():
+            raise RuntimeError(f"No frames decoded for {camera['camera_id']}")
+        return count
+    except Exception:
+        stop_event.set()
+        raise
+    finally:
+        if source:
+            source.stop()
+        if frames and hasattr(frames, 'close'):
+            frames.close()
+        if engine:
+            engine.close()
 
-    print(f"\n[LinQ Worker] Запущен мониторинг {len(sources)} камер на бэкенде '{backend}'")
 
-    if args.web:
-        import uvicorn
-        from app.main import app
-        print(f"[Web API] Доступно на http://127.0.0.1:{args.port}")
-        uvicorn.run(app, host="0.0.0.0", port=args.port)
-    else:
-        try:
-            while True:
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            print("\nОстановка воркеров...")
-            stop_event.set()
-            for t in threads:
-                t.join(timeout=2.0)
-            notification_manager.stop()
+def main(argv=None):
+    load_dotenv(ROOT / '.env')
+    parser = argparse.ArgumentParser(description='CV worker: real inference or explicit MOCK demo')
+    parser.add_argument('--config', default=str(ROOT / 'configs' / 'cv_engine.yaml'))
+    parser.add_argument('--source', action='append', help='Video/RTSP/image directory; repeat for each configured camera')
+    parser.add_argument('--backend', choices=['linq_tpu', 'onnx_cpu', 'mock', 'linq', 'onnx'])
+    parser.add_argument('--model')
+    parser.add_argument('--api-url', default=os.getenv('CV_API_URL', 'http://127.0.0.1:8000/api/v1'))
+    parser.add_argument('--no-api', action='store_true', help='Offline mode: retain events and JPEGs in outbox')
+    parser.add_argument('--outbox', default=str(ROOT / 'data' / 'cv_outbox'))
+    parser.add_argument('--max-frames', type=int)
+    parser.add_argument('--fast', action='store_true', help='Process files without playback pacing')
+    parser.add_argument('--loop', action='store_true', help='Explicitly loop file sources')
+    args = parser.parse_args(argv)
+    if args.max_frames is not None and args.max_frames <= 0:
+        parser.error('--max-frames must be positive')
+    config = load_config(args.config)
+    options = inference_options(config, args.backend, args.model)
+    cameras = [dict(row) for row in config.get('cameras', [])]
+    if not cameras:
+        parser.error('Configure cameras with camera_id and site_id in YAML')
+    if args.source:
+        if len(args.source) > len(cameras):
+            parser.error('Each --source needs a corresponding camera entry in YAML')
+        cameras = cameras[:len(args.source)]
+        for camera, source in zip(cameras, args.source):
+            camera['source'] = source
+    seen = set()
+    for camera in cameras:
+        if not camera.get('camera_id') or not camera.get('site_id'):
+            parser.error('Each camera needs camera_id and site_id matching the backend')
+        if camera['camera_id'] in seen:
+            parser.error('camera_id must be unique')
+        seen.add(camera['camera_id'])
+        if not camera.get('source'):
+            if options['backend'] == 'MOCK':
+                camera['source'] = 'synthetic'
+            else:
+                parser.error('Provide a real --source or camera.source in YAML')
+        spec = camera['source']
+        if not spec.startswith(('synthetic', 'rtsp://', 'rtsps://', 'http://', 'https://')) and not Path(spec).is_absolute():
+            camera['source'] = str(ROOT / spec)
+    if options['backend'] == 'LINQ_TPU' and len(cameras) > 1:
+        parser.error('Use one TPU stream until concurrent device execution is verified on the stand')
+    sink = IncidentClient(None if args.no_api else args.api_url, args.outbox)
+    stop = threading.Event()
+    pool = ThreadPoolExecutor(max_workers=len(cameras))
+    sink.start()
+    exit_code = 0
+    try:
+        futures = [pool.submit(run_camera_worker, camera, config, options, stop, sink,
+                               args.max_frames, not args.fast, args.loop) for camera in cameras]
+        for future in as_completed(futures):
+            log.info('Stream finished: %d frames', future.result())
+    except KeyboardInterrupt:
+        stop.set()
+    except Exception:
+        log.exception('CV worker failed')
+        stop.set()
+        exit_code = 1
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+        sink.close()
+    return exit_code
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+    raise SystemExit(main())

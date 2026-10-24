@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import os
+import math
 import time
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 import cv2
@@ -101,6 +102,7 @@ class CVPipeline:
         timestamp: Optional[float] = None,
         camera_id: Optional[str] = None,
         render_annotations: bool = True,
+        source_fps: float = 25.0,
     ) -> FrameProcessingResult:
         """
         Полная обработка кадра: инференс -> трекинг -> правила -> дедупликация -> сохранение снапшота.
@@ -132,7 +134,7 @@ class CVPipeline:
             camera_id=cam_id,
             frame_width=orig_w,
             frame_height=orig_h,
-            fps=self._last_fps if self._last_fps > 0 else 25.0,
+            fps=source_fps if math.isfinite(source_fps) and source_fps > 0 else 25.0,
             all_detections=detections,
         )
         raw_violations = self.rules_engine.evaluate(tracked_objects, context)
@@ -166,7 +168,7 @@ class CVPipeline:
                     try:
                         self.incident_callback(incident, annotated_frame)
                     except Exception as cb_err:
-                        print(f"[CVPipeline] Ошибка в incident_callback: {cb_err}")
+                        raise RuntimeError(f"Cannot persist or deliver incident {incident.incident_id}") from cb_err
 
         # Замеры времени
         t_end = time.perf_counter()
@@ -317,10 +319,15 @@ class CVPipeline:
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
+            cap.release()
             raise RuntimeError(f"Не удалось открыть видеофайл {video_path}.")
 
         frame_count = 0
         prev_time = time.perf_counter()
+        media_fps = cap.get(cv2.CAP_PROP_FPS)
+        if not math.isfinite(media_fps) or media_fps <= 0:
+            media_fps = 25.0
+        epoch_start = time.time()
 
         try:
             while True:
@@ -343,7 +350,8 @@ class CVPipeline:
                 result = self.process_frame(
                     frame=frame,
                     frame_id=frame_count,
-                    timestamp=time.time(),
+                    timestamp=epoch_start + (frame_count - 1) / media_fps,
+                    source_fps=media_fps,
                 )
                 yield result
         finally:
@@ -353,5 +361,7 @@ class CVPipeline:
         """Сброс внутренних состояний трекера, правил и дедупликатора."""
         self.tracker.reset()
         self.anti_spam.reset()
+        self.rules_engine.reset()
         self.frames_processed = 0
         self.incidents_total = 0
+        self._last_fps = 0.0

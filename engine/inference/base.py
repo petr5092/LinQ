@@ -152,16 +152,32 @@ class BaseInferenceEngine(ABC):
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.input_size = input_size  # (width, height)
-        self.class_names = class_names or {
-            0: "person",
-            1: "forklift",
-            2: "machinery",
-            3: "helmet",
-            4: "no_helmet",
-            5: "vest",
-            6: "no_vest",
-        }
+        # Labels belong to the trained model; guessing safety labels corrupts COCO outputs.
+        self.class_names = self.validate_class_names(class_names) if class_names is not None else {}
+        if not 0 <= conf_threshold <= 1 or not 0 <= iou_threshold <= 1:
+            raise ValueError("Confidence and IoU thresholds must be in [0, 1].")
+        if len(input_size) != 2 or any(type(size) is not int or size <= 0 for size in input_size):
+            raise ValueError("input_size must contain positive integer (width, height).")
         self.is_loaded: bool = False
+
+    @staticmethod
+    def validate_class_names(names: Any) -> Dict[int, str]:
+        """Validate a full ordered label map, including JSON string keys."""
+        if isinstance(names, (list, tuple)):
+            names = dict(enumerate(names))
+        if not isinstance(names, dict) or not names:
+            raise ValueError("class_names must be a nonempty list or mapping of all model classes.")
+        result = {}
+        for key, value in names.items():
+            if isinstance(key, bool) or not (isinstance(key, int) or isinstance(key, str) and key.isdigit()):
+                raise ValueError("Class IDs must be nonnegative integers.")
+            index = int(key)
+            if index in result or not isinstance(value, str) or not value.strip():
+                raise ValueError("Class IDs must be unique and class names must be nonempty strings.")
+            result[index] = value.strip()
+        if set(result) != set(range(len(result))):
+            raise ValueError("class_names must contain every class ID from 0 to C-1.")
+        return result
 
     @abstractmethod
     def load(self, model_path: Optional[str] = None) -> None:
