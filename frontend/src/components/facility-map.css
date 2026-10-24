@@ -1,0 +1,1291 @@
+.object-map {
+  --risk-fill: #ffffffb8;
+  --risk-stroke: #c1c7cc;
+  --risk-ink: #5f6871;
+  margin-bottom: 24px;
+  container-type: inline-size;
+}
+.object-map-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.object-map-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.map-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #f5f6f7;
+  border: 1px solid #e9ecef;
+  padding: 3px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+.map-view-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #8b919a;
+  font-size: 11px;
+}
+.map-view-toggle button.active {
+  background: #fff;
+  color: #424e5d;
+  box-shadow: 0 1px 4px #1e293b12;
+}
+.plan-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.plan-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #e8ebef;
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: #929aa4;
+  background: #fff;
+}
+.plan-toolbar select {
+  border: 0;
+  background: none;
+  font-size: 11px;
+  max-width: 180px;
+  color: #687381;
+  cursor: pointer;
+}
+.plan-live {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8b939b;
+  font-size: 10px;
+}
+.plan-live i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #d6a54a;
+}
+.plan-canvas {
+  border: 1px solid #e6e9ec;
+  border-radius: 11px;
+  background: #fafbfb;
+  overflow: hidden;
+}
+.plan-display-options {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 12px 16px 8px;
+}
+.plan-display-options button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #fff;
+  border: 1px solid #e3e7e9;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 9px;
+  color: #77818c;
+}
+.plan-display-options button[aria-pressed='true'] {
+  color: #346ba3;
+  background: #edf4fb;
+  border-color: #bfd2e7;
+}
+.risk-clear {
+  --risk-fill: #ffffffc9;
+  --risk-active-fill: #dfebf6;
+  --risk-active-side: #afc6db;
+  --risk-stroke: #c0c7cb;
+  --risk-ink: #76818a;
+}
+.risk-notice {
+  --risk-fill: #fcf5d6;
+  --risk-active-fill: #f5db74;
+  --risk-active-side: #d9b94e;
+  --risk-stroke: #dec46c;
+  --risk-ink: #a17d20;
+}
+.risk-warning {
+  --risk-fill: #fff0df;
+  --risk-active-fill: #ffc483;
+  --risk-active-side: #e7a05f;
+  --risk-stroke: #dea165;
+  --risk-ink: #b17436;
+}
+.risk-critical {
+  --risk-fill: #fce8e6;
+  --risk-active-fill: #f6a7a1;
+  --risk-active-side: #dd827b;
+  --risk-stroke: #df9996;
+  --risk-ink: #bb625d;
+}
+.plan-canvas-bottom {
+  padding: 10px 16px;
+  border-top: 1px solid #e9ecee;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #a0a6ad;
+  background: #ffffffd9;
+}
+.plan-canvas-bottom > div {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+.plan-canvas-bottom button {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  background: white;
+  border: 1px solid #e7eaec;
+  border-radius: 5px;
+  color: #7b8792;
+}
+.plan-canvas-bottom button:disabled {
+  opacity: 0.35;
+}
+.plan-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+  padding: 13px 2px;
+  color: #8a939d;
+  font-size: 9px;
+}
+.plan-legend > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.plan-legend i {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--risk-stroke);
+  background: var(--risk-fill);
+  border-radius: 2px;
+}
+.plan-legend small {
+  margin-left: auto;
+  font-size: 8px;
+  color: #a3a9b0;
+}
+.plan-card.chosen {
+  outline: 2px solid #6595c6;
+  outline-offset: 2px;
+}
+.risk-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--risk-stroke);
+  flex-shrink: 0;
+}
+.plan-detail {
+  border: 1px solid #dce5ef;
+  border-radius: 10px;
+  background: #fff;
+  margin-top: 8px;
+  padding: 18px;
+  scroll-margin-top: 20px;
+}
+.plan-detail-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.plan-detail-heading small {
+  font-size: 9px;
+  color: #9aa3ac;
+}
+.plan-detail-heading h3 {
+  font-size: 13px;
+  margin-top: 3px;
+  color: #58687a;
+}
+.plan-detail-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 13px 0;
+  font-size: 10px;
+  color: #959fa9;
+}
+.plan-risk-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--risk-ink);
+}
+.plan-detail-summary > button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: #5883b2;
+  font-size: 10px;
+  padding: 0;
+}
+.plan-camera-previews {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.plan-camera-previews .camera-view {
+  aspect-ratio: 16/9;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.plan-camera-previews > div > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 0;
+  font-size: 9px;
+  color: #939da8;
+}
+.plan-camera-previews strong {
+  font-size: 9px;
+  font-weight: 500;
+  color: #64788f;
+}
+.plan-camera-previews button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: #8294a8;
+  padding: 3px;
+}
+.plan-camera-previews .detect-box > span {
+  font-size: 6px;
+}
+.plan-zone-events {
+  border-top: 1px solid #edf0f3;
+  padding-top: 13px;
+  margin-top: 8px;
+}
+.plan-zone-events > strong {
+  font-size: 11px;
+  font-weight: 550;
+  color: #718093;
+}
+.plan-zone-events > strong > span {
+  margin-left: 5px;
+  color: #adb5bd;
+  font-weight: 400;
+}
+.plan-zone-events > button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #f0f2f4;
+  background: white;
+  padding: 12px 0;
+  color: #67768a;
+  font-size: 11px;
+}
+.plan-zone-events > button:hover {
+  background: #fafbfc;
+}
+.event-risk-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--risk-stroke);
+}
+.plan-zone-events small {
+  display: block;
+  font-size: 9px;
+  color: #a0a9b4;
+  margin-top: 2px;
+}
+.plan-zone-events time {
+  margin-left: auto;
+  font-size: 9px;
+  color: #a0a9b4;
+}
+.plan-zone-events p {
+  font-size: 11px;
+  color: #a0a9b4;
+  margin-top: 12px;
+}
+@container (max-width:620px) {
+  .object-map-heading {
+    align-items: flex-start;
+  }
+  .object-map-heading h2 {
+    font-size: 15px;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .map-view-toggle button {
+    padding: 6px;
+    font-size: 10px;
+  }
+  .plan-live {
+    margin-left: 0;
+    font-size: 9px;
+  }
+  .plan-legend {
+    gap: 9px;
+  }
+  .plan-legend small {
+    width: 100%;
+    margin-left: 0;
+  }
+  .plan-detail {
+    padding: 12px;
+  }
+  .plan-display-options {
+    padding-right: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .facility-scene {
+    transition: none;
+  }
+}
+
+.plan-room-picker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: #8b96a1;
+}
+.plan-room-picker select {
+  font-size: 10px;
+  color: #82909e;
+  border: 0;
+  border-bottom: 1px dashed #dce1e6;
+  max-width: 100%;
+  background: none;
+  padding: 5px 0;
+}
+
+.plan-signal-note {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 9px;
+  color: #929aa3;
+  margin: 10px 0 0;
+}
+
+/* Compact monitoring tiles: four rows of four fit in the desktop map panel. */
+.object-map-heading {
+  margin-bottom: 12px;
+}
+.object-map .plan-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.object-map .plan-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--risk-stroke);
+  background: var(--risk-fill);
+  color: #626d7a;
+  position: relative;
+  height: 92px;
+  min-height: 92px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.object-map .plan-card > div {
+  display: flex;
+  align-items: center;
+  color: var(--risk-ink);
+  position: absolute;
+  right: 9px;
+  top: 9px;
+  margin: 0;
+  gap: 6px;
+}
+.object-map .plan-card > div > svg {
+  display: none;
+}
+.object-map .plan-card > small {
+  font-size: 9px;
+  line-height: 12px;
+  padding-right: 10px;
+}
+.object-map .plan-card > strong {
+  font-size: 11px;
+  line-height: 14px;
+  margin: 4px 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.object-map .plan-card > span {
+  font-size: 9px;
+  line-height: 12px;
+}
+.object-map .plan-card footer {
+  display: flex;
+  align-items: center;
+  color: var(--risk-ink);
+  font-size: 8px;
+  line-height: 12px;
+  margin-top: auto;
+  padding-top: 4px;
+  gap: 4px;
+  border: 0;
+  width: 100%;
+  white-space: nowrap;
+}
+.object-map .plan-card footer > svg:last-child {
+  margin-left: auto;
+  width: 10px;
+}
+.plan-display-options {
+  justify-content: space-between;
+  padding: 11px 12px 0;
+}
+.scene-view-switch {
+  display: flex;
+  gap: 3px;
+}
+.plan-viewport {
+  width: 100%;
+  overflow: hidden;
+  aspect-ratio: 1000/650;
+}
+.facility-scene {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  user-select: none;
+}
+.scene-campus {
+  fill: #f3f5f5;
+  stroke: #dce2e4;
+  stroke-width: 1;
+}
+.scene-roads {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 13;
+  pointer-events: none;
+}
+.scene-context-outline {
+  fill: #edf0f155;
+  stroke: #cdd4d7;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+.scene-area {
+  cursor: pointer;
+  outline: none;
+}
+.scene-area-floor .scene-prism-top {
+  fill: var(--risk-fill);
+  stroke: var(--risk-stroke);
+  stroke-width: 1.2;
+}
+.scene-area-floor .scene-prism-side {
+  fill: var(--risk-stroke);
+  opacity: 0.35;
+  stroke: var(--risk-stroke);
+  stroke-width: 0.5;
+}
+.scene-area.chosen .scene-area-floor .scene-prism-top,
+.scene-area:hover .scene-area-floor .scene-prism-top,
+.scene-area:focus-visible .scene-area-floor .scene-prism-top {
+  stroke: #5485b3;
+  stroke-width: 2.5;
+}
+.scene-equipment {
+  pointer-events: none;
+}
+.scene-fixture .scene-prism-top {
+  fill: #edf0f1;
+  stroke: #929da4;
+  stroke-width: 0.65;
+}
+.scene-fixture .scene-prism-side {
+  fill: #d5dce0;
+  fill-opacity: 0.4;
+  stroke: #9aa5ac;
+  stroke-width: 0.65;
+}
+.scene-rack-shelf,
+.scene-fence {
+  fill: none;
+  stroke: #87969e;
+  stroke-width: 0.65;
+}
+.scene-fence {
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+.scene-building-shell {
+  fill: none;
+  stroke: #75848e;
+  stroke-width: 1;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.scene-roofline {
+  stroke: #a6b0b7;
+  stroke-width: 0.7;
+}
+.scene-building-labels {
+  fill: #586b77;
+  font-size: 16px;
+  font-weight: 550;
+  pointer-events: none;
+}
+.scene-building-labels tspan {
+  fill: #99a4ab;
+  font-size: 12px;
+  font-weight: 400;
+}
+.scene-railings {
+  fill: none;
+  stroke: #86969e;
+  stroke-width: 0.8;
+  pointer-events: none;
+}
+.scene-level-label {
+  fill: #617582;
+  font-size: 13px;
+  letter-spacing: 1px;
+  font-weight: 550;
+  pointer-events: none;
+}
+.scene-level-height {
+  fill: #9ba6ac;
+  font-size: 12px;
+  font-weight: 400;
+}
+.scene-scale {
+  fill: #8f9ba3;
+  font-size: 12px;
+  pointer-events: none;
+}
+.scene-scale path {
+  fill: none;
+  stroke: #a8b3bb;
+  stroke-width: 1;
+}
+.scene-camera-cone {
+  fill: #6293be26;
+  stroke: #71a0c3;
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+  pointer-events: none;
+}
+.scene-offline {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.plan-canvas-bottom > span {
+  font-size: 8px;
+}
+.feed-person.unidentified {
+  color: #8f98a4;
+}
+@container (max-width: 620px) {
+  .object-map .plan-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .plan-card footer {
+    letter-spacing: -0.1px;
+  }
+}
+@container (max-width: 380px) {
+  .object-map .plan-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .scene-view-switch {
+    gap: 1px;
+  }
+  .plan-display-options {
+    padding: 8px 6px 0;
+  }
+  .plan-display-options button {
+    padding: 5px;
+    font-size: 8px;
+  }
+}
+
+.scene-stairs {
+  fill: none;
+  stroke: #8d9ba4;
+  stroke-width: 0.8;
+  pointer-events: none;
+}
+
+.scene-alignment-guides {
+  stroke: #cdd5da;
+  fill: none;
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+  pointer-events: none;
+}
+
+.scene-building,
+.scene-zone,
+.scene-incident {
+  cursor: pointer;
+  outline: none;
+}
+.scene-building-volume .scene-prism-top {
+  fill: var(--risk-fill);
+  stroke: var(--risk-stroke);
+  stroke-width: 1.6;
+}
+.scene-building-volume .scene-prism-side {
+  fill: var(--risk-fill);
+  stroke: var(--risk-stroke);
+  stroke-width: 1;
+  filter: brightness(0.97);
+}
+.scene-building:hover .scene-prism-top,
+.scene-building:focus-visible .scene-prism-top,
+.scene-zone:hover .scene-prism-top,
+.scene-zone:focus-visible .scene-prism-top {
+  stroke: #5485b3;
+  stroke-width: 2.5;
+}
+.scene-incident circle {
+  fill: var(--risk-ink);
+  stroke: white;
+  stroke-width: 2;
+}
+.scene-incident text {
+  fill: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  pointer-events: none;
+}
+.scene-incident:hover circle,
+.scene-incident:focus-visible circle {
+  stroke: #3479b9;
+  stroke-width: 3;
+}
+.scene-tooltip[data-slot='tooltip-content'] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 290px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #556578;
+  border: 1px solid #dce4eb;
+  box-shadow: 0 4px 18px #22354a18;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.scene-tooltip strong {
+  font-size: 12px;
+  font-weight: 550;
+}
+.scene-tooltip span {
+  color: #92a0ac;
+}
+.plan-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  font-size: 10px;
+  color: #95a0ac;
+  border-bottom: 1px solid #eef0f2;
+  flex-wrap: wrap;
+}
+.plan-breadcrumbs button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 10px;
+  color: #6c86a0;
+}
+.plan-breadcrumbs button:hover {
+  color: #246cb4;
+}
+.plan-breadcrumbs span {
+  color: #65788d;
+}
+.plan-breadcrumbs button.plan-back {
+  margin-left: auto;
+  font-size: 9px;
+}
+.hierarchy-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.hierarchy-layer {
+  scroll-margin-top: 20px;
+}
+.hierarchy-layer + .hierarchy-layer {
+  border-top: 1px solid #e3e9ee;
+}
+.hierarchy-layer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px 0;
+  font-size: 11px;
+  color: #5e7387;
+}
+.hierarchy-layer-heading > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hierarchy-layer-heading b {
+  font-size: 9px;
+  font-weight: 500;
+  color: #a1abb6;
+  border: 1px solid #e0e6eb;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.hierarchy-layer-heading small {
+  font-size: 9px;
+  font-weight: 400;
+  color: #a3adb8;
+}
+.hierarchy-layer-heading button {
+  display: grid;
+  place-items: center;
+  background: #fff;
+  border: 1px solid #e0e5eb;
+  border-radius: 5px;
+  width: 23px;
+  height: 23px;
+  color: #8c9ba9;
+}
+.hierarchy-stack[data-depth='building'] .hierarchy-layer:first-child .plan-viewport,
+.hierarchy-stack[data-depth='zone'] .hierarchy-layer:not(:last-child) .plan-viewport {
+  aspect-ratio: 1000/370;
+}
+.hierarchy-stack .hierarchy-layer:last-child .plan-viewport {
+  aspect-ratio: 1000/580;
+}
+@container (max-width:620px) {
+  .hierarchy-layer-heading > small {
+    display: none;
+  }
+  .plan-breadcrumbs {
+    font-size: 9px;
+    padding: 8px 10px;
+  }
+  .hierarchy-layer-heading span {
+    flex-wrap: wrap;
+  }
+}
+
+/* One continuous canvas for the scales of the selected place. */
+.facility-atlas {
+  position: relative;
+  height: clamp(320px, calc(100dvh - 580px), 410px);
+  overflow: hidden;
+  width: 100%;
+  isolation: isolate;
+}
+.atlas-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.facility-scene.scene-embedded {
+  width: 1000px;
+  height: 320px;
+  overflow: visible;
+}
+.atlas-stage {
+  transform-origin: 0 0;
+  transition: transform 0.65s cubic-bezier(0.22, 0.8, 0.22, 1);
+}
+.atlas-stage-building,
+.atlas-stage-zone,
+.atlas-stage-room {
+  animation: atlas-reveal 0.65s cubic-bezier(0.22, 0.8, 0.22, 1);
+}
+.atlas-connections {
+  pointer-events: none;
+}
+.atlas-cone {
+  animation: atlas-cone-reveal 0.65s ease;
+}
+.atlas-cone polygon {
+  fill: url(#atlas-focus-cone);
+  stroke: none;
+}
+.atlas-cone path {
+  fill: none;
+  stroke: #3c83d5;
+  stroke-opacity: 0.16;
+  stroke-width: 1;
+  stroke-dasharray: 14 12;
+}
+.scene-building.chosen .scene-prism-top,
+.scene-zone.chosen .scene-prism-top {
+  stroke: #1673ee;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 5px #2e81ea66);
+}
+.scene-building.chosen .scene-prism-side {
+  stroke: #1673ee;
+  stroke-width: 2;
+}
+.scene-embedded .scene-incident text {
+  font-size: 18px;
+}
+.plan-canvas-bottom .plan-room-picker {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  max-width: 68%;
+}
+.plan-canvas-bottom .plan-room-picker select {
+  width: 100%;
+  max-width: 100%;
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-canvas-bottom .plan-room-picker > svg {
+  flex-shrink: 0;
+}
+.plan-toolbar {
+  margin-bottom: 8px;
+}
+.plan-breadcrumbs {
+  padding: 7px 12px;
+}
+.plan-canvas-bottom {
+  padding: 7px 12px;
+  gap: 8px;
+}
+.scene-prism-top,
+.scene-prism-side {
+  transition:
+    stroke 0.25s,
+    fill 0.25s;
+}
+@keyframes atlas-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes atlas-cone-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .atlas-stage,
+  .atlas-cone,
+  .scene-prism-top,
+  .scene-prism-side {
+    animation: none;
+    transition: none;
+  }
+}
+@container (max-width:620px) {
+  .facility-atlas {
+    height: clamp(310px, calc(100dvh - 580px), 385px);
+  }
+}
+
+/* Keep the complete map visible beside the fixed event feed. */
+.page-body:has(.object-map) .stat-card {
+  min-height: 92px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.page-body:has(.object-map) .stat-value {
+  font-size: 27px;
+  line-height: 31px;
+  margin-top: 6px;
+}
+.page-body:has(.object-map) .stats-grid {
+  margin-bottom: 14px;
+}
+.page-body:has(.object-map) .overview-tabs {
+  margin-bottom: 14px;
+  height: 38px;
+}
+.scene-building.chosen .scene-prism-top,
+.scene-zone.chosen .scene-prism-top {
+  stroke-width: 6;
+  filter: drop-shadow(0 0 6px #2e81ea99);
+}
+.atlas-canvas {
+  touch-action: none;
+}
+
+/* Focus colors apply to the complete volume, keeping equipment neutral. */
+.scene-entity {
+  transition: opacity 0.3s ease;
+}
+.scene-entity.is-muted {
+  opacity: 0.24;
+}
+.scene-entity.is-muted:hover,
+.scene-entity.is-muted:focus-within,
+.scene-entity.is-muted:has([data-state='delayed-open'], [data-state='instant-open']) {
+  opacity: 0.85;
+}
+:is(.scene-building, .scene-zone, .scene-area):is(
+    :hover,
+    :focus-visible,
+    .chosen,
+    [data-state='delayed-open'],
+    [data-state='instant-open']
+  )
+  :is(.scene-building-volume, .scene-area-floor)
+  > .scene-prism-top {
+  fill: var(--risk-active-fill);
+}
+:is(.scene-building, .scene-zone, .scene-area):is(
+    :hover,
+    :focus-visible,
+    .chosen,
+    [data-state='delayed-open'],
+    [data-state='instant-open']
+  )
+  :is(.scene-building-volume, .scene-area-floor)
+  > .scene-prism-side {
+  fill: var(--risk-active-side);
+  opacity: 1;
+  filter: none;
+}
+:is(.scene-building, .scene-zone, .scene-area).chosen
+  :is(.scene-building-volume, .scene-area-floor)
+  > :is(.scene-prism-top, .scene-prism-side) {
+  stroke: #1673ee;
+}
+.atlas-scope-caption {
+  overflow: visible;
+  transition:
+    x 0.65s ease,
+    y 0.65s ease;
+}
+.atlas-scope-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: #f9fbfce6;
+  color: #647a90;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.atlas-scope-title.is-active {
+  color: #176dd5;
+  background: #edf5ffd9;
+}
+.atlas-level-number {
+  color: #98a9ba;
+  font-size: 17px;
+}
+.atlas-level-name {
+  font-size: 20px;
+  font-weight: 550;
+}
+.atlas-scope-title button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.atlas-scope-title button:is(:hover, :focus-visible) {
+  background: #d4e7ff;
+  outline: 1px solid #92baf1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-entity,
+  .atlas-scope-caption {
+    transition: none;
+  }
+}
+
+.atlas-scope-title button.atlas-scope-jump {
+  display: flex;
+  gap: 10px;
+  width: auto;
+  padding: 0 3px;
+  font: inherit;
+}
+.facility-focus {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: clamp(320px, calc(100dvh - 580px), 410px);
+  overflow: hidden;
+  padding: 10px 12px 4px;
+  gap: 7px;
+}
+.focus-contexts {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.focus-context-card {
+  position: relative;
+  width: min(29%, 175px);
+  min-width: 0;
+  border: 1px solid #dce5ed;
+  border-radius: 7px;
+  background: #ffffffc9;
+  overflow: hidden;
+}
+.focus-context-open {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: transparent;
+  color: #667f97;
+  border: 0;
+  padding: 6px 7px 2px;
+  text-align: left;
+  cursor: pointer;
+}
+.focus-context-open:is(:hover, :focus-visible) {
+  background: #edf5ff;
+  outline: 1px solid #83b3e9;
+  outline-offset: -1px;
+}
+.focus-context-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 20px;
+  min-width: 0;
+  width: 100%;
+  font-size: 10px;
+}
+.focus-context-title > span,
+.focus-current-title > span {
+  color: #96a8b9;
+  font-weight: 400;
+}
+.focus-context-title strong {
+  font-size: 10px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.focus-context-preview {
+  display: block;
+  width: 100%;
+  height: 48px;
+  pointer-events: none;
+}
+.focus-context-close,
+.focus-main-close {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #6f8eae;
+  cursor: pointer;
+  border-radius: 4px;
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
+}
+.focus-context-close {
+  position: absolute;
+  right: 2px;
+  top: 0;
+}
+.focus-context-close:is(:hover, :focus-visible),
+.focus-main-close:is(:hover, :focus-visible) {
+  background: #deedff;
+  outline: 1px solid #9ec2eb;
+}
+.focus-main-heading {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 25px;
+}
+.focus-current-title {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  border: 0;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: #246fc2;
+  background: #edf5ff;
+  cursor: pointer;
+}
+.focus-current-title strong {
+  font-weight: 550;
+}
+.focus-current-floor {
+  color: #96a3b0;
+  font-size: 10px;
+}
+.focus-siblings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.focus-siblings button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #e0e7ed;
+  background: #fff;
+  color: #718294;
+  font-size: 9px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.focus-siblings button[aria-pressed='true'] {
+  border-color: #85b4ec;
+  background: #eaf3ff;
+  color: #256fc2;
+}
+.focus-siblings button:hover {
+  border-color: #85b4ec;
+}
+.focus-siblings small {
+  color: #9aa8b5;
+  font-size: 8px;
+}
+.focus-main-plan {
+  flex: 1;
+  min-height: 0;
+  animation: atlas-reveal 0.3s ease;
+}
+@container (max-width: 620px) {
+  .facility-focus {
+    height: clamp(310px, calc(100dvh - 580px), 385px);
+    padding: 8px 8px 3px;
+  }
+  .focus-context-preview {
+    height: 40px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-main-plan {
+    animation: none;
+  }
+}
+
+.facility-focus .facility-scene {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+button.plan-live {
+  border: 0;
+  background: transparent;
+  padding: 5px 0;
+  cursor: pointer;
+}
+button.plan-live:is(:hover, :focus-visible) {
+  color: #2876ca;
+}
+.plan-camera-previews > div {
+  min-width: 0;
+}
+.plan-camera-previews > div > div:last-child {
+  gap: 4px;
+}
+.plan-camera-previews > div > div:last-child > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-camera-previews strong {
+  flex-shrink: 0;
+}
+.plan-camera-previews .camera-overlay-top {
+  padding: 5px;
+  gap: 4px;
+}
+.plan-camera-previews .camera-timestamp {
+  font-size: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.plan-camera-previews .live-label {
+  font-size: 6px;
+  flex-shrink: 0;
+}
+.plan-camera-previews .camera-ai {
+  font-size: 6px;
+  padding: 3px 4px;
+  right: 4px;
+  bottom: 4px;
+}
+@container (max-width: 380px) {
+  .plan-camera-previews {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

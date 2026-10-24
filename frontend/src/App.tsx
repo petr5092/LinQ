@@ -50,6 +50,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react'
+import { FacilityMap } from './components/facility-map'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -429,7 +430,6 @@ export default function App() {
   const [view, setView] = useState('grid')
   const [overviewTab, setOverviewTab] = useState<'snapshot' | 'cameras' | 'map'>('snapshot')
   const [snapshotTimestamp, setSnapshotTimestamp] = useState<number>(() => Date.now())
-  const setMapView = (v: boolean) => setOverviewTab(v ? 'map' : 'cameras')
   const [feedTab, setFeedTab] = useState('all')
   const [feedUnread, setFeedUnread] = useState(true)
   const [seen, setSeen] = useState<string[]>([])
@@ -922,40 +922,30 @@ export default function App() {
     </div>
   )
   const map = (
-    <div className="facility-map">
-      <div className="map-top">
-        <span>
-          <Map size={15} /> {activeSite.name}
-        </span>
-        <span>Схема зон · демо</span>
-      </div>
-      <div className="map-roads" />
-      {siteZones.map((z, i) => {
-        const count = openEvents.filter((e) => e.zone === z).length
-        const Icon = zoneIcons[i % zoneIcons.length]
-        return (
-          <button
-            className={`map-zone map-zone-${i} ${count ? 'alert' : ''}`}
-            key={z}
-            onClick={() => {
-              setWorkshop('all')
-              setZone(z)
-              setMapView(false)
-            }}
-          >
-            <Icon size={27} />
-            <strong>{z}</strong>
-            <span>
-              {count} {count === 1 ? 'событие' : 'событий'}
-            </span>
-            <b>{i + 1}</b>
-          </button>
-        )
-      })}
-      <div className="map-legend">
-        <span className="small-dot orange" /> Требует внимания <span className="small-dot blue" /> Зона под контролем
-      </div>
-    </div>
+    <FacilityMap
+      site={activeSite}
+      events={siteEvents}
+      onEvent={(id) => setSelectedId(id)}
+      onAttention={(cameraIds) => {
+        navigate('cameras')
+        setSearch(cameraIds[0] ?? '')
+      }}
+      onCameras={(selectedZone) => {
+        navigate('cameras')
+        setZone(selectedZone || 'all')
+      }}
+      renderCamera={(camera, event) => (
+        <CameraView
+          camera={camera}
+          event={event}
+          image={camera.image}
+          video={camera.video}
+          online={camera.online}
+          showBoxes={showBoxes}
+          mode="live"
+        />
+      )}
+    />
   )
     const latestCam = siteCameras.find((c) => c.id === 'CAM-01') || siteCameras[0]
   const latestIncident = siteEvents.find((e) => e.camera === latestCam?.id) || siteEvents.find(isOpen) || siteEvents[0]
