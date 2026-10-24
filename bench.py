@@ -14,6 +14,16 @@ from engine.inference.factory import create_inference_engine
 from engine.sources.factory import create_video_source
 
 
+def file_sha256(path):
+    with open(path, 'rb') as stream:
+        if hasattr(hashlib, 'file_digest'):
+            return hashlib.file_digest(stream, 'sha256').hexdigest()
+        h = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(65536), b''):
+            h.update(chunk)
+        return h.hexdigest()
+
+
 def percentile(data, p):
     if not data:
         raise ValueError('Cannot compute a percentile without measurements')
@@ -66,8 +76,7 @@ def run_benchmark(engine, source, frames, warmup, source_spec):
     model_path = getattr(engine, 'model_path', None)
     checksum = None
     if model_path and Path(model_path).is_file():
-        with open(model_path, 'rb') as stream:
-            checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+        checksum = file_sha256(model_path)
     is_mock = backend == 'MOCK' or bool(getattr(engine, 'is_emulated', False))
     return {
         'recorded_at_utc': datetime.now(timezone.utc).isoformat(),

@@ -15,6 +15,16 @@ import numpy as np
 from engine.inference.local_onnx import LocalONNXEngine
 
 
+def file_sha256(path):
+    with open(path, 'rb') as stream:
+        if hasattr(hashlib, 'file_digest'):
+            return hashlib.file_digest(stream, 'sha256').hexdigest()
+        h = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(65536), b''):
+            h.update(chunk)
+        return h.hexdigest()
+
+
 def calibration_batch(directory, samples, preprocess):
     paths = sorted(path for path in Path(directory).iterdir() if path.suffix.lower() in {'.jpg', '.jpeg', '.png', '.bmp'})
     tensors = []
@@ -59,11 +69,9 @@ def main(argv=None):
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     TpuProgram.from_executable(executable, descriptions).to_file(str(out))
-    def sha256(path):
-        with open(path, 'rb') as stream:
-            return hashlib.file_digest(stream, 'sha256').hexdigest()
+
     manifest = {'compiled_at_utc': datetime.now(timezone.utc).isoformat(), 'profile': 'TPU_H1M', 'optimization': 'O1',
-                'onnx_sha256': sha256(args.onnx), 'tpu_sha256': sha256(out),
+                'onnx_sha256': file_sha256(args.onnx), 'tpu_sha256': file_sha256(out),
                 'input_name': input_name, 'output_names': output_names, 'input_shape': input_shape,
                 'class_names': classes, 'calibration_images': paths,
                 'preprocessing': 'engine.inference.yolo.letterbox: RGB float32 NCHW /255, padding=114',

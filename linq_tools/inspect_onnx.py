@@ -6,11 +6,19 @@ from pathlib import Path
 from engine.inference.local_onnx import LocalONNXEngine
 
 
+def file_sha256(path):
+    with open(path, 'rb') as stream:
+        if hasattr(hashlib, 'file_digest'):
+            return hashlib.file_digest(stream, 'sha256').hexdigest()
+        h = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(65536), b''):
+            h.update(chunk)
+        return h.hexdigest()
+
+
 def inspect_model(path):
     with LocalONNXEngine(str(path)) as engine:
-        with open(path, 'rb') as stream:
-            checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
-        return {'model': str(Path(path).resolve()), 'sha256': checksum,
+        return {'model': str(Path(path).resolve()), 'sha256': file_sha256(path),
                 'input_name': engine.input_name, 'output_names': engine.output_names,
                 'input_shape': [1, 3, engine.input_size[1], engine.input_size[0]],
                 'class_names': engine.class_names}
