@@ -19,7 +19,7 @@ def test_debounce_suppresses_flickering():
         rule_id="DZ_01",
         severity=ViolationSeverity.HIGH,
         timestamp=100.0,
-        camera_id="cam_01",
+        camera_id="camera_01",
         track_id=42,
     )
 
@@ -42,7 +42,7 @@ def test_candidate_pruning_on_flapping():
     """Если кандидат исчезает до подтверждения (более 5 кадров), он сбрасывается."""
     anti_spam = AntiSpamEngine(debounce_frames=6, cooldown_seconds=60.0)
 
-    raw = RuleViolation("danger_zone", "DZ_01", ViolationSeverity.HIGH, 10.0, "cam_01", 10)
+    raw = RuleViolation("danger_zone", "DZ_01", ViolationSeverity.HIGH, 10.0, "camera_01", 10)
 
     # Появился на 2 кадра
     anti_spam.process([raw], FrameContext(1, 10.0))
@@ -66,7 +66,7 @@ def test_cooldown_blocks_spam_alerts():
         rule_id="DZ_01",
         severity=ViolationSeverity.HIGH,
         timestamp=100.0,
-        camera_id="cam_01",
+        camera_id="camera_01",
         track_id=99,
     )
 
@@ -95,7 +95,7 @@ def test_incident_resolution_and_reactivation():
         rule_id="DZ_01",
         severity=ViolationSeverity.HIGH,
         timestamp=100.0,
-        camera_id="cam_01",
+        camera_id="camera_01",
         track_id=12,
     )
 
@@ -109,11 +109,11 @@ def test_incident_resolution_and_reactivation():
         anti_spam.process([], FrameContext(f, 100.0 + f * 0.1, fps=25.0))
 
     # Статус RESOLVED
-    assert anti_spam._active_incidents[("cam_01", "danger_zone", 12)].state == IncidentState.RESOLVED
+    assert anti_spam._active_incidents[("camera_01", "danger_zone", "DZ_01", 12)].state == IncidentState.RESOLVED
 
     # 3. Нарушитель вернулся во время действия кулдауна (60 сек)
     anti_spam.process([raw_violation], FrameContext(10, 102.0, fps=25.0))
-    active_inc = anti_spam._active_incidents[("cam_01", "danger_zone", 12)]
+    active_inc = anti_spam._active_incidents[("camera_01", "danger_zone", "DZ_01", 12)]
     # Инцидент возобновился в ACTIVE, но новый алерт НЕ отправлен (newly_confirmed = [])
     assert active_inc.state == IncidentState.ACTIVE
 
@@ -122,8 +122,8 @@ def test_anti_spam_multi_track_and_reset():
     """Независимая обработка двух нарушителей и полный сброс состояния."""
     anti_spam = AntiSpamEngine(debounce_frames=1, cooldown_seconds=60.0)
 
-    v1 = RuleViolation("danger_zone", "DZ_01", ViolationSeverity.CRITICAL, 1.0, "cam_1", 1)
-    v2 = RuleViolation("danger_zone", "DZ_01", ViolationSeverity.CRITICAL, 1.0, "cam_1", 2)
+    v1 = RuleViolation("danger_zone", "DZ_01", ViolationSeverity.CRITICAL, 1.0, "camera_01", 1)
+    v2 = RuleViolation("danger_zone", "DZ_01", ViolationSeverity.CRITICAL, 1.0, "camera_01", 2)
 
     new_incidents, active = anti_spam.process([v1, v2], FrameContext(1, 1.0))
     assert len(new_incidents) == 2

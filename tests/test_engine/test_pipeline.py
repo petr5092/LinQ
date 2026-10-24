@@ -161,9 +161,10 @@ def test_cv_pipeline_resilience_and_reset(temp_storage_dir):
         incident_callback=broken_callback,
     )
 
-    # Пайплайн не должен падать даже при сбое callback или хранилища
+    # A failed durable handoff must be visible; silently dropping an alert is unsafe.
     dummy = np.zeros((100, 100, 3), dtype=np.uint8)
-    pipeline.process_frame(dummy)
+    with pytest.raises(RuntimeError, match='Cannot persist or deliver incident'):
+        pipeline.process_frame(dummy)
 
     assert pipeline.frames_processed == 1
 

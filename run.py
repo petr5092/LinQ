@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import uvicorn
 
@@ -83,8 +84,8 @@ def standalone_main():
 if __name__ == "__main__":
     if "--standalone" in sys.argv:
         standalone_main()
-    elif len(sys.argv) > 1 and any(arg in sys.argv for arg in ("--source", "--backend", "--model", "--web")):
-        worker_main()
+    elif len(sys.argv) > 1 and any(arg in sys.argv for arg in ("--source", "--backend", "--model", "--web", "--config")):
+        raise SystemExit(worker_main())
     else:
         from app.main import app
         from app.config import settings

@@ -81,6 +81,9 @@ class BaseRule(ABC):
         self.name = name
         self.is_enabled = is_enabled
 
+    def reset(self) -> None:
+        """Clear temporal state while preserving rule configuration."""
+
     @abstractmethod
     def evaluate(self, tracks: List[TrackedObject], context: FrameContext) -> List[RuleViolation]:
         """

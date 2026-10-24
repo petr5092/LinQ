@@ -7,9 +7,12 @@ inference:
   tpu_model_path: "models/tpu/safety_yolov8_h1m.tpu"
   onnx_model_path: "models/onnx/safety_yolov8.onnx"
   input_size: [640, 640]
-  confidence_threshold: 0.35
+  confidence_threshold: 0.15  # Preserve low-score detections for ByteTrack; new tracks require 0.45
   iou_threshold: 0.45
   device_id: 0
+  # ONNX: read exact class names from model metadata. TPU: set training labels here.
+  class_names: null
+  adapter_module: null
 
 tracking:
   algorithm: "bytetrack"
@@ -30,9 +33,10 @@ rules:
     severity: "HIGH"
   fall_detection:
     enabled: true
-    aspect_ratio_threshold: 1.15
+    aspect_ratio_threshold: 1.2
     max_speed_px: 2.0
     min_frames_lying: 12
+    min_lying_seconds: 3.0
     severity: "CRITICAL"
   ppe_compliance:
     enabled: true
@@ -42,11 +46,16 @@ rules:
 
 deduplication:
   debounce_frames: 10      # Количество кадров подтверждения нарушения (~0.4 сек)
+  debounce_seconds: 1.5    # Both frame and elapsed-time confirmation must pass
   cooldown_seconds: 300.0   # Подавление повторных оповещений на 5 минут
   resolve_frames: 25        # Кадров отсутствия нарушения для закрытия инцидента
 
 cameras:
-  - camera_id: "camera_workshop_01"
+  # Match backend IDs; redraw example polygons for your original video resolution.
+  - camera_id: "CAM-01"
+    site_id: "north"
+    zone: "gate"
+    source: null
     name: "Сборочный цех №1"
     zones:
       - zone_id: "danger_zone_crane"

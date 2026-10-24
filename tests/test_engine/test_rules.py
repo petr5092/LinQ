@@ -125,14 +125,14 @@ def test_proximity_disabled_and_no_target_objects():
 
 def test_fall_detection_full_incident_lifecycle():
     """Полный жизненный цикл падения: горизонтальное положение, подтверждение, детекция и очистка трека."""
-    rule = FallDetectionRule(aspect_ratio_thresh=1.2, min_frames_lying=2)
+    rule = FallDetectionRule(aspect_ratio_thresh=1.2, min_frames_lying=2, min_lying_seconds=0.0)
     ctx = FrameContext(1, 1.0)
 
     # 1. Первый кадр горизонтального положения (ar = 150/60 = 2.5, speed=0.1)
     fallen = TrackedObject(1, 0, "person", BoundingBox(100, 100, 250, 160), 0.9, speed=0.1)
     v1 = rule.evaluate([fallen], ctx)
     assert len(v1) == 0  # 1 кадр < min_frames_lying (2)
-    assert rule._lying_frame_count[1] == 1
+    assert rule._lying_frame_count[(ctx.camera_id, 1)] == 1
 
     # 2. Второй кадр: фиксация падения
     ctx.frame_id = 2
@@ -148,14 +148,14 @@ def test_fall_detection_full_incident_lifecycle():
     standing = TrackedObject(1, 0, "person", BoundingBox(100, 100, 150, 250), 0.9, speed=1.0)
     v3 = rule.evaluate([standing], ctx)
     assert len(v3) == 0
-    assert 1 not in rule._lying_frame_count
+    assert (ctx.camera_id, 1) not in rule._lying_frame_count
 
     # 4. Очистка счетчиков пропавших треков
     rule.evaluate([fallen], ctx)
-    assert 1 in rule._lying_frame_count
+    assert (ctx.camera_id, 1) in rule._lying_frame_count
     # В следующем кадре трек 1 пропал
     rule.evaluate([], ctx)
-    assert 1 not in rule._lying_frame_count
+    assert (ctx.camera_id, 1) not in rule._lying_frame_count
 
 
 def test_fall_detection_disabled_and_non_target():

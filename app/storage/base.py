@@ -8,6 +8,10 @@ class BaseStorageProvider(ABC):
     Абстрактный интерфейс провайдера хранилища стоп-кадров инцидентов.
     """
 
+    def save_snapshot_key(self, image_data, incident_id: str, camera_id: str) -> str:
+        """Save evidence and return its durable object key, not an expiring URL."""
+        raise NotImplementedError('Storage must implement durable snapshot keys')
+
     @abstractmethod
     def save_snapshot(
         self,

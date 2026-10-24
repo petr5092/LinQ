@@ -132,7 +132,7 @@ async def register_incident(incident_in: IncidentCreate, db: Session = Depends(g
 
     # Отправляем оповещение диспетчерам через WebSocket
     await notifier.broadcast({
-        "event": "INCIDENT_NEW",
+        "event": "INCIDENT_CREATED",
         "data": incident_dict,
     })
 
@@ -176,7 +176,7 @@ async def change_incident_status(
 
     # Оповещаем UI об изменении статуса
     await notifier.broadcast({
-        "event": "INCIDENT_STATUS_CHANGED",
+        "event": "INCIDENT_STATUS_UPDATED",
         "data": updated.model_dump(mode="json")
     })
 

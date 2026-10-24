@@ -1,0 +1,38 @@
+# Minimal detector integration: person in a forbidden polygon. No unsupported PPE.
+inference:
+  backend: ONNX_CPU
+  onnx_model_path: models/onnx/safety_yolov8.onnx
+  tpu_model_path: models/tpu/safety_yolov8_h1m.tpu
+  input_size: [640, 640]
+  confidence_threshold: 0.15
+  iou_threshold: 0.45
+  class_names: null
+tracking:
+  high_threshold: 0.45
+  low_threshold: 0.15
+  max_lost_frames: 30
+  min_hits_to_confirm: 2
+rules:
+  danger_zone:
+    enabled: true
+  ppe_compliance:
+    enabled: false
+  proximity:
+    enabled: false
+  fall_detection:
+    enabled: false
+deduplication:
+  debounce_frames: 10
+  debounce_seconds: 1.5
+  cooldown_seconds: 300
+  resolve_frames: 25
+cameras:
+  - camera_id: CAM-01
+    site_id: north
+    zone: gate
+    source: null
+    zones:
+      - zone_id: demo_zone
+        name: Replace this polygon for your video
+        polygon: [[100, 100], [500, 100], [500, 400], [100, 400]]
+        forbidden_classes: [person]

@@ -36,12 +36,17 @@ class MockInferenceEngine(BaseInferenceEngine):
             conf_threshold=conf_threshold,
             iou_threshold=iou_threshold,
             input_size=input_size,
-            class_names=class_names,
+            # Fictional labels are allowed only in this explicitly selected test backend.
+            class_names=class_names if class_names is not None else {
+                0: "person", 1: "forklift", 2: "machinery", 3: "helmet",
+                4: "no_helmet", 5: "vest", 6: "no_vest",
+            },
         )
         self.canned_detections = canned_detections or []
         self.frame_idx = 0
         self.simulated_delay_ms = simulated_delay_ms
         self.is_loaded = True
+        self.is_emulated = True
 
     def set_canned_detections(self, detections_per_frame: List[List[Detection]]) -> None:
         self.canned_detections = detections_per_frame
@@ -66,6 +71,8 @@ class MockInferenceEngine(BaseInferenceEngine):
         return self.canned_detections[idx]
 
     def infer(self, frame: np.ndarray) -> InferenceResult:
+        if not self.is_loaded:
+            raise RuntimeError("Mock engine is closed. Call load() before infer().")
         t0 = time.perf_counter()
         if self.simulated_delay_ms > 0:
             time.sleep(self.simulated_delay_ms / 1000.0)

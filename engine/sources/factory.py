@@ -32,13 +32,10 @@ def create_video_source(
             if os.path.isfile(demo_path):
                 return VideoFileSource(filepath=demo_path, loop=loop, realtime=realtime)
 
-    if spec_clean.startswith("synthetic"):
+    if spec_clean == "synthetic" or spec_clean.startswith("synthetic:"):
         phase = 0.0
         if ":" in spec_clean:
-            try:
-                phase = float(spec_clean.split(":", 1)[1])
-            except ValueError:
-                phase = 0.0
+            phase = float(spec_clean.split(":", 1)[1])
         return SyntheticSource(fps=fps or 10.0, phase=phase, realtime=realtime)
 
     if spec_clean.startswith("rtsp://") or spec_clean.startswith("rtsps://") or spec_clean.startswith("http://") or spec_clean.startswith("https://"):
@@ -50,5 +47,4 @@ def create_video_source(
     if os.path.isfile(spec_clean):
         return VideoFileSource(filepath=spec_clean, loop=loop, realtime=realtime)
 
-    # По умолчанию для синтетики, если путь не найден
-    return SyntheticSource(fps=fps or 10.0, realtime=realtime)
+    raise ValueError(f"Unknown video source or missing path: {spec_clean}")
