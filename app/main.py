@@ -90,14 +90,16 @@ async def lifespan(app: FastAPI):
                 cam_source = str(demo_fallback)
 
     try:
-        from run_worker import run_camera_worker
+        from app.services.cv_service import run_cv_camera_worker
+        backend_choice = settings.INFERENCE_BACKEND
+        model_choice = settings.ONNX_MODEL_PATH if "onnx" in backend_choice.lower() else settings.TPU_MODEL_PATH
         cv_thread = threading.Thread(
-            target=run_camera_worker,
+            target=run_cv_camera_worker,
             args=(
                 "CAM-01",
                 cam_source,
-                settings.INFERENCE_BACKEND.lower(),
-                settings.ONNX_MODEL_PATH,
+                backend_choice,
+                model_choice,
                 stop_cv_event,
             ),
             daemon=True,
