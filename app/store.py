@@ -4,6 +4,7 @@ import os
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 
 from . import config
 from .enterprise import UNASSIGNED_SHIFT
@@ -51,13 +52,29 @@ class EventStore:
             """)
             self.db.commit()
 
-    def add(self, ev):
-        with self.lock, self.db:
+    @contextmanager
+    def _immediate_transaction(self):
+        with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
+            try:
+                yield
+            except BaseException:
+                self.db.rollback()
+                raise
+            else:
+                self.db.commit()
+
+    def add(self, ev):
+        with self._immediate_transaction():
             existing = self.db.execute(
-                "SELECT * FROM events WHERE camera=? AND type=? AND status='new' AND ts>=? "
+                "SELECT * FROM events WHERE camera=? AND type=? AND status='new' AND ts>=? AND ts<=? "
                 "ORDER BY ts DESC, id DESC LIMIT 1",
-                (ev["camera"], ev["type"], ev["ts"] - EVENT_MERGE_WINDOW_SECONDS),
+                (
+                    ev["camera"],
+                    ev["type"],
+                    ev["ts"] - EVENT_MERGE_WINDOW_SECONDS,
+                    ev["ts"],
+                ),
             ).fetchone()
             if existing:
                 severity = max(
@@ -104,8 +121,7 @@ class EventStore:
         if status not in STATUSES:
             return None
         actor = str(by or "Не указан").strip()[:120] or "Не указан"
-        with self.lock, self.db:
-            self.db.execute("BEGIN IMMEDIATE")
+        with self._immediate_transaction():
             current = self.db.execute("SELECT status FROM events WHERE id=?", (eid,)).fetchone()
             if current is None:
                 return None

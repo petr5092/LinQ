@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional, Tuple
 from sqlalchemy import select, func, desc
 from sqlalchemy.orm import Session
@@ -15,6 +15,17 @@ from app.schemas.incident import (
 from app.storage.base import BaseStorageProvider
 
 INCIDENT_MERGE_WINDOW_SECONDS = 300
+
+
+def _database_local_now(db: Session) -> datetime:
+    """Return a naive timestamp using the database's timestamp convention."""
+    dialect = db.get_bind().dialect.name
+    if dialect == "postgresql":
+        return db.scalar(select(func.localtimestamp()))
+    if dialect == "sqlite":
+        value = db.scalar(select(func.datetime("now")))
+        return datetime.fromisoformat(value)
+    return datetime.now()
 
 
 def map_incident_to_read(incident: Incident, storage_provider: Optional[BaseStorageProvider] = None) -> IncidentRead:
@@ -184,7 +195,7 @@ def create_or_merge_incident(
     storage_provider: Optional[BaseStorageProvider] = None,
 ) -> Tuple[IncidentRead, bool]:
     """Merge repeated detections from one camera into its recent open incident."""
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = _database_local_now(db)
     db.execute(
         select(Camera.id).where(Camera.id == incident_in.camera_id).with_for_update()
     ).scalar_one_or_none()

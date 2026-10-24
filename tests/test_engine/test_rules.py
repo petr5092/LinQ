@@ -303,6 +303,8 @@ def test_shared_rule_registry_builds_worker_and_pipeline_defaults():
         "proximity",
     }
     assert worker_engine.get_rule("danger_zone").zones["worker_zone"] is zone
+    assert worker_engine.get_rule("proximity").safe_distance_px == 140.0
+    assert pipeline_engine.get_rule("proximity").safe_distance_px == 140.0
 
 
 def test_incident_presentation_comes_from_rule_registry():

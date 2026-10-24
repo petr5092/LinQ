@@ -1,8 +1,7 @@
-from collections import Counter
 from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -21,17 +20,28 @@ def get_analytics_summary(site_id: Optional[str] = None, db: Session = Depends(g
     incident_filters = [Incident.site_id == site_id] if site_id else []
     camera_filters = [Camera.site_id == site_id] if site_id else []
 
-    def count_incidents(*filters: Any) -> int:
-        return db.scalar(select(func.count(Incident.id)).where(*incident_filters, *filters)) or 0
-
-    total_incidents = count_incidents()
-    new_count = count_incidents(Incident.status == "new")
-    working_count = count_incidents(Incident.status == "working")
-    resolved_count = count_incidents(Incident.status == "resolved")
-    dismissed_count = count_incidents(Incident.status == "dismissed")
-    critical_count = count_incidents(Incident.severity == "critical")
-    warning_count = count_incidents(Incident.severity == "warning")
-    info_count = count_incidents(Incident.severity == "info")
+    incident_counts = db.execute(
+        select(
+            func.count(Incident.id),
+            func.count(Incident.id).filter(Incident.status == "new"),
+            func.count(Incident.id).filter(Incident.status == "working"),
+            func.count(Incident.id).filter(Incident.status == "resolved"),
+            func.count(Incident.id).filter(Incident.status == "dismissed"),
+            func.count(Incident.id).filter(Incident.severity == "critical"),
+            func.count(Incident.id).filter(Incident.severity == "warning"),
+            func.count(Incident.id).filter(Incident.severity == "info"),
+        ).where(*incident_filters)
+    ).one()
+    (
+        total_incidents,
+        new_count,
+        working_count,
+        resolved_count,
+        dismissed_count,
+        critical_count,
+        warning_count,
+        info_count,
+    ) = incident_counts
 
     total_cameras = db.scalar(
         select(func.count(Camera.id)).where(*camera_filters)
@@ -43,20 +53,36 @@ def get_analytics_summary(site_id: Optional[str] = None, db: Session = Depends(g
     today = date.today()
     today_start = datetime.combine(today, time.min)
     tomorrow_start = today_start + timedelta(days=1)
-    today_incidents = db.execute(
-        select(Incident.created_at, Incident.zone, Incident.type).where(
-            *incident_filters,
-            Incident.created_at >= today_start,
-            Incident.created_at < tomorrow_start,
-        )
-    )
+    today_filters = [
+        *incident_filters,
+        Incident.created_at >= today_start,
+        Incident.created_at < tomorrow_start,
+    ]
+    if db.get_bind().dialect.name == "sqlite":
+        hour_expression = cast(func.strftime("%H", Incident.created_at), Integer)
+    else:
+        hour_expression = func.extract("hour", Incident.created_at)
+
     hourly = [0] * 24
-    zones: Counter[str] = Counter()
-    types: Counter[str] = Counter()
-    for created_at, zone, incident_type in today_incidents:
-        hourly[created_at.hour] += 1
-        zones[zone] += 1
-        types[incident_type] += 1
+    for hour, count in db.execute(
+        select(hour_expression, func.count(Incident.id))
+        .where(*today_filters)
+        .group_by(hour_expression)
+    ):
+        hourly[int(hour)] = count
+
+    zones = db.execute(
+        select(Incident.zone, func.count(Incident.id))
+        .where(*today_filters)
+        .group_by(Incident.zone)
+        .order_by(func.count(Incident.id).desc())
+    ).all()
+    types = db.execute(
+        select(Incident.type, func.count(Incident.id))
+        .where(*today_filters)
+        .group_by(Incident.type)
+        .order_by(func.count(Incident.id).desc())
+    ).all()
 
     return {
         "date": today.isoformat(),
@@ -83,11 +109,11 @@ def get_analytics_summary(site_id: Optional[str] = None, db: Session = Depends(g
             "hourly": hourly,
             "by_zone": [
                 {"name": name, "count": count}
-                for name, count in zones.most_common()
+                for name, count in zones
             ],
             "by_type": [
                 {"name": name, "count": count}
-                for name, count in types.most_common()
+                for name, count in types
             ],
         },
     }
