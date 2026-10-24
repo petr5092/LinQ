@@ -20,6 +20,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--project", default="runs/linq")
     p.add_argument("--name", default="safety")
     p.add_argument("--patience", type=int, default=25)
+    p.add_argument("--resume", type=Path, default=None, help="Resume from existing last.pt")
     p.add_argument("--check-only", action="store_true")
     return p
 
@@ -47,8 +48,17 @@ def main() -> None:
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     model = YOLO(args.weights)
-    results = model.train(
-        data=str(args.data.resolve()),
+    from training.dataset_config import normalized_data_yaml
+    if args.resume:
+        if not args.resume.is_file():
+            parser().error(f"Resume checkpoint missing: {args.resume}")
+        resumed = YOLO(str(args.resume))
+        resumed.train(resume=True, device=args.device)
+        print(f"Resumed training from: {args.resume}")
+        return
+    with normalized_data_yaml(args.data) as normalized:
+        model.train(
+        data=str(normalized),
         task="detect",
         epochs=args.epochs,
         imgsz=args.imgsz,
@@ -66,7 +76,7 @@ def main() -> None:
         name=args.name,
         exist_ok=False,
         plots=True,
-    )
+        )
     run_dir = Path(model.trainer.save_dir)
     best = run_dir / "weights" / "best.pt"
     if not best.is_file():
@@ -80,6 +90,7 @@ def main() -> None:
         "seed": args.seed,
         "training": {"epochs": args.epochs, "imgsz": args.imgsz, "batch": args.batch, "device": args.device},
         "torch_version": torch.__version__,
+        "ultralytics_version": __import__("ultralytics").__version__,
     }
     (run_dir / "linq_training_manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
