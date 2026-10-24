@@ -21,11 +21,9 @@ from engine.deduplication.types import ConfirmedIncident
 from engine.inference.base import BaseInferenceEngine, Detection, InferenceMetrics
 from engine.inference.factory import create_inference_engine
 from engine.rules.base import FrameContext, RuleViolation, ViolationSeverity
-from engine.rules.engine import RulesEngine
 from engine.rules.danger_zone import DangerZoneRule
-from engine.rules.proximity import ProximityRule
-from engine.rules.fall_detection import FallDetectionRule
-from engine.rules.ppe_compliance import PPEComplianceRule
+from engine.rules.engine import RulesEngine
+from engine.rules.registry import build_rules_engine
 from engine.tracking.tracker import ByteTracker
 from engine.tracking.types import TrackedObject
 
@@ -87,13 +85,8 @@ class CVPipeline:
 
     @staticmethod
     def _create_default_rules_engine() -> RulesEngine:
-        """Создает стандартный набор правил ТБ по умолчанию."""
-        engine = RulesEngine()
-        engine.add_rule(DangerZoneRule())
-        engine.add_rule(ProximityRule(safe_distance_px=140.0))
-        engine.add_rule(FallDetectionRule())
-        engine.add_rule(PPEComplianceRule(require_helmet=True, require_vest=True))
-        return engine
+        """Создает стандартный набор правил из общего реестра."""
+        return build_rules_engine()
 
     def process_frame(
         self,

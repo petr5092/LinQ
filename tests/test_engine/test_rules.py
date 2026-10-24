@@ -12,6 +12,7 @@ from engine.rules.fall_detection import FallDetectionRule
 from engine.rules.phone_usage import PhoneUsageRule
 from engine.rules.ppe_compliance import PPEComplianceRule
 from engine.rules.proximity import ProximityRule
+from engine.rules.registry import build_rules_engine, get_incident_presentation
 from engine.tracking.types import TrackedObject
 
 
@@ -275,3 +276,45 @@ def test_rules_engine_orchestration_and_safety():
     # RulesEngine не падает, а логирует ошибку и возвращает доступные нарушения
     violations = engine.evaluate([], FrameContext(2, 2.0))
     assert len(violations) == 0
+
+
+def test_shared_rule_registry_builds_worker_and_pipeline_defaults():
+    """Оба режима используют реестр, сохраняя специфичную настройку worker."""
+    zone = ZoneDefinition(
+        zone_id="worker_zone",
+        name="Зона worker",
+        polygon=[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)],
+    )
+
+    worker_engine = build_rules_engine(zones=[zone], for_worker=True)
+    pipeline_engine = build_rules_engine()
+
+    assert set(worker_engine.rules) == {
+        "danger_zone",
+        "ppe_compliance",
+        "fall_detection",
+        "phone_usage",
+        "proximity",
+    }
+    assert set(pipeline_engine.rules) == {
+        "danger_zone",
+        "ppe_compliance",
+        "fall_detection",
+        "proximity",
+    }
+    assert worker_engine.get_rule("danger_zone").zones["worker_zone"] is zone
+
+
+def test_incident_presentation_comes_from_rule_registry():
+    """Правило может получить текст инцидента из реестра или безопасный fallback."""
+    helmet = get_incident_presentation("ppe_compliance", {"ppe_type": "helmet"})
+    assert helmet.title == "Сотрудник без каски"
+    assert helmet.incident_type == "person"
+
+    danger_zone = get_incident_presentation("danger_zone")
+    assert danger_zone.title == "Нахождение в опасной зоне"
+    assert danger_zone.incident_type == "access"
+
+    custom = get_incident_presentation("new_custom_rule")
+    assert custom.title == "New custom rule"
+    assert custom.action == "Свяжитесь с мастером смены."
