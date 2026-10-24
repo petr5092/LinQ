@@ -69,6 +69,13 @@ class NotificationManager:
         except queue.Full:
             print("[NotificationManager] Очередь рассылки переполнена!")
 
+    def refresh_incident(self, incident: dict) -> None:
+        """Update the existing notification for a repeated detection."""
+        try:
+            self.q.put_nowait({"kind": "incident_update", "event": incident})
+        except queue.Full:
+            print("[NotificationManager] Очередь рассылки переполнена!")
+
     def update_incident_status(self, event_id: str, new_status: str, operator_name: Optional[str] = None) -> None:
         """Обновление статуса в отправленных сообщениях (Telegram)."""
         try:
@@ -94,6 +101,8 @@ class NotificationManager:
                 kind = task.get("kind")
                 if kind == "incident":
                     self._deliver_incident(task["event"], task.get("snapshot_path"))
+                elif kind == "incident_update":
+                    self._refresh_incident_messages(task["event"])
                 elif kind == "status_update":
                     self._refresh_incident_messages(task["event"])
             except Exception as e:
@@ -181,6 +190,23 @@ class NotificationManager:
     def _refresh_incident_messages(self, event: dict) -> None:
         eid = str(event.get("id") or event.get("event_id") or "0")
         deliveries = self.store.get_deliveries_for_event(eid, channel="telegram")
+        if deliveries and not any(event.get(key) for key in ("rule_label", "rule_name", "title")):
+            from app.db.models.incident import Incident
+            from app.db.session import SessionLocal
+            from app.services.incident_service import map_incident_to_read
+
+            with SessionLocal() as db:
+                incident = db.get(Incident, eid)
+                if incident:
+                    full_event = map_incident_to_read(incident).model_dump(mode="json")
+                    full_event.update(event)
+                    full_event.update(
+                        camera_name=incident.camera.name if incident.camera else incident.camera_id,
+                        zone_name=incident.zone,
+                        rule_label=incident.title,
+                        timestamp_str=incident.time,
+                    )
+                    event = full_event
         for d in deliveries:
             if d.get("message_id"):
                 try:

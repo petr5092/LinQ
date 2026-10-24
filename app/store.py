@@ -9,6 +9,8 @@ from . import config
 from .enterprise import UNASSIGNED_SHIFT
 
 STATUSES = ("new", "confirmed", "false", "forwarded")
+EVENT_MERGE_WINDOW_SECONDS = 300
+SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 class EventStore:
@@ -50,14 +52,33 @@ class EventStore:
             self.db.commit()
 
     def add(self, ev):
-        with self.lock:
+        with self.lock, self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            existing = self.db.execute(
+                "SELECT * FROM events WHERE camera=? AND type=? AND status='new' AND ts>=? "
+                "ORDER BY ts DESC, id DESC LIMIT 1",
+                (ev["camera"], ev["type"], ev["ts"] - EVENT_MERGE_WINDOW_SECONDS),
+            ).fetchone()
+            if existing:
+                severity = max(
+                    (existing["severity"], ev["severity"]),
+                    key=lambda value: SEVERITY_RANK.get(value, 0),
+                )
+                self.db.execute(
+                    "UPDATE events SET ts=?, label=?, severity=?, zone=?, track_id=?, snapshot=?, latency_ms=?, "
+                    "workshop=?, shift=?, shift_date=? WHERE id=?",
+                    (ev["ts"], ev["label"], severity, ev["zone"], ev["track_id"], ev["snapshot"], ev["latency_ms"],
+                     ev.get("workshop"), ev.get("shift"), ev.get("shift_date"), existing["id"]),
+                )
+                ev.update(id=existing["id"], severity=severity, merged=True)
+                return existing["id"]
             cur = self.db.execute(
                 "INSERT INTO events(ts,camera,type,label,severity,zone,track_id,status,snapshot,latency_ms,"
                 "workshop,shift,shift_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (ev["ts"], ev["camera"], ev["type"], ev["label"], ev["severity"], ev["zone"],
                  ev["track_id"], ev["status"], ev["snapshot"], ev["latency_ms"],
                  ev.get("workshop"), ev.get("shift"), ev.get("shift_date")))
-            self.db.commit()
+            ev.update(id=cur.lastrowid, merged=False)
             return cur.lastrowid
 
     def query(self, type=None, camera=None, zone=None, status=None, since=None, until=None, limit=200,

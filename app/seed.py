@@ -1,12 +1,9 @@
-"""
-Модуль первичного наполнения базы данных справочными объектами, камерами и тестовыми инцидентами.
-"""
+"""Первичное наполнение базы справочниками площадок, зон и камер."""
 from datetime import datetime
 from sqlalchemy import select
 from app.db.session import SessionLocal
 from app.db.models.site import Site, Workshop, Zone
 from app.db.models.camera import Camera
-from app.db.models.incident import Incident
 
 SEED_SITES = [
     {
@@ -62,122 +59,11 @@ SEED_CAMERAS = [
     {"id": "CAM-43", "name": "Бытовой городок", "zone": "Бытовой городок", "workshop": "Склад стройматериалов", "site_id": "east", "image_placeholder": "workshop", "online": True},
 ]
 
-SEED_INCIDENTS = [
-    {
-        "id": "TK-1048",
-        "site_id": "north",
-        "camera_id": "CAM-01",
-        "zone": "Цех № 1",
-        "title": "Сотрудник без каски",
-        "time": "14:32:08",
-        "severity": "critical",
-        "type": "person",
-        "description": "Сотрудник находится в зоне монтажных работ без защитной каски более 15 секунд.",
-        "action": "Свяжитесь с мастером смены. Остановите работы до устранения нарушения.",
-        "image_key": "construction",
-        "status": "new",
-        "box": [34.5, 34.6, 13.6, 55.1],
-        "employee_name": "Иван Петров",
-        "employee_role": "Оператор станка · Цех № 1",
-        "employee_number": "00482",
-        "employee_access": "Доступ разрешён · СКУД в 14:12",
-        "contact_name": "Алексей Морозов",
-        "contact_role": "Мастер смены",
-        "contact_radio": "Канал 3 · Мастер-01",
-        "contact_phone": "+7 (495) 555-01-20, доб. 203",
-    },
-    {
-        "id": "TK-1047",
-        "site_id": "north",
-        "camera_id": "CAM-08",
-        "zone": "Проходная",
-        "title": "Попытка несанкционированного прохода",
-        "time": "14:31:42",
-        "severity": "critical",
-        "type": "access",
-        "description": "СКУД отклонила проход: срок допуска к работам истёк 22.10.2026. Турникет заблокирован.",
-        "action": "Передайте информацию охране.",
-        "image_key": "gate",
-        "status": "new",
-        "box": [48, 24, 13, 47],
-        "employee_name": "Дмитрий Соколов",
-        "employee_role": "Подрядчик · ООО «Монтаж»",
-        "employee_number": "П-0136",
-        "employee_access": "В проходе отказано · Допуск истёк",
-        "contact_name": "Сергей Волков",
-        "contact_role": "Начальник охраны",
-        "contact_radio": "Канал 1 · Пост-01",
-        "contact_phone": "+7 (495) 555-01-20, доб. 101",
-    },
-    {
-        "id": "TK-1046",
-        "site_id": "north",
-        "camera_id": "CAM-12",
-        "zone": "Склад",
-        "title": "Ящик в проходе",
-        "time": "14:30:16",
-        "severity": "warning",
-        "type": "environment",
-        "description": "Посторонний ящик перекрывает пешеходный проход между стеллажами Б-3 и Б-4.",
-        "action": "Свяжитесь с начальником склада и организуйте освобождение прохода.",
-        "image_key": "warehouse",
-        "status": "new",
-        "box": [66, 43, 12, 17],
-        "contact_name": "Елена Кузнецова",
-        "contact_role": "Начальник склада",
-        "contact_radio": "Канал 4 · Склад-01",
-        "contact_phone": "+7 (495) 555-01-20, доб. 304",
-    },
-    {
-        "id": "TK-1043",
-        "site_id": "north",
-        "camera_id": "CAM-16",
-        "zone": "Погрузочная зона",
-        "title": "Опасное сближение с погрузчиком",
-        "time": "14:25:39",
-        "severity": "critical",
-        "type": "person",
-        "description": "Расстояние от пешехода до движущегося погрузчика меньше 1,5 метра.",
-        "action": "Предупредите водителя и остановите движение на участке.",
-        "image_key": "warehouse",
-        "status": "working",
-        "box": [47, 36, 15, 39],
-        "employee_name": "Андрей Смирнов",
-        "employee_role": "Комплектовщик",
-        "employee_number": "00317",
-        "employee_access": "Доступ разрешён · СКУД в 13:58",
-        "contact_name": "Елена Кузнецова",
-        "contact_role": "Начальник склада",
-        "contact_radio": "Канал 4 · Склад-01",
-        "contact_phone": "+7 (495) 555-01-20, доб. 304",
-    },
-    {
-        "id": "TK-1035",
-        "site_id": "north",
-        "camera_id": "CAM-05",
-        "zone": "Цех № 1",
-        "title": "Падение сотрудника",
-        "time": "13:41:12",
-        "severity": "critical",
-        "type": "person",
-        "description": "Зафиксировано падение и отсутствие движения в течение 20 секунд. Помощь оказана.",
-        "action": "Проверьте акт оказания помощи и состояние участка.",
-        "image_key": "workshop",
-        "status": "resolved",
-        "box": [37, 65, 28, 18],
-        "contact_name": "Анна Белова",
-        "contact_role": "Дежурный медработник",
-        "contact_radio": "Канал 5 · Медпункт",
-        "contact_phone": "+7 (495) 555-01-20, доб. 103",
-    },
-]
-
-
 def seed_database():
     from app.db.base import Base
     from app.db.session import engine
     Base.metadata.create_all(bind=engine)
-    """Заполнение БД базовыми объектами при пустой базе."""
+    """Заполняет справочники площадок и камер, не создавая вымышленные инциденты."""
     db = SessionLocal()
     try:
         # 1. Проверяем наличие площадок
@@ -220,16 +106,6 @@ def seed_database():
                 db.add(camera)
             db.commit()
             print("[Seed] Камеры успешно созданы.")
-
-        # 3. Проверяем наличие инцидентов
-        existing_incidents = db.scalar(select(Incident))
-        if not existing_incidents:
-            print("[Seed] Заполнение тестовыми инцидентами...")
-            for inc_data in SEED_INCIDENTS:
-                incident = Incident(**inc_data)
-                db.add(incident)
-            db.commit()
-            print("[Seed] Тестовые инциденты успешно созданы.")
 
     finally:
         db.close()

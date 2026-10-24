@@ -188,6 +188,8 @@ class Notifier:
             try:
                 if msg["kind"] == "event":
                     self.deliver(msg["event"])
+                elif msg["kind"] == "event_update":
+                    self.refresh_messages(msg["event"])
                 elif msg["kind"] == "status":
                     self.refresh_messages(msg["event"])
             except Exception as e:                      # рассылка не должна падать целиком

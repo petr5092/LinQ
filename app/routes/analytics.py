@@ -1,4 +1,6 @@
-from typing import Dict, Any, Optional
+from collections import Counter
+from datetime import date, datetime, time, timedelta
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -13,55 +15,51 @@ router = APIRouter(prefix="/analytics", tags=["Analytics & Dashboard"])
 @router.get("/summary")
 def get_analytics_summary(site_id: Optional[str] = None, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
-    Аналитическая сводка нарушений:
-    - Общее количество зафиксированных событий
-    - Активные инциденты (новые + в работе)
-    - Устраненные нарушения
-    - Распределение по степени критичности (critical, warning, info)
-    - Статистика по камерам (online / total)
+    Сводка по инцидентам и почасовая статистика за текущую дату сервера.
+    При указании site_id все показатели ограничиваются выбранной площадкой.
     """
-    inc_query = select(Incident)
-    cam_query = select(Camera)
-    if site_id:
-        inc_query = inc_query.where(Incident.site_id == site_id)
-        cam_query = cam_query.where(Camera.site_id == site_id)
+    incident_filters = [Incident.site_id == site_id] if site_id else []
+    camera_filters = [Camera.site_id == site_id] if site_id else []
 
-    # Статусы
-    total_incidents = db.scalar(
-        select(func.count(Incident.id)).where(Incident.site_id == site_id) if site_id
-        else select(func.count(Incident.id))
+    def count_incidents(*filters: Any) -> int:
+        return db.scalar(select(func.count(Incident.id)).where(*incident_filters, *filters)) or 0
+
+    total_incidents = count_incidents()
+    new_count = count_incidents(Incident.status == "new")
+    working_count = count_incidents(Incident.status == "working")
+    resolved_count = count_incidents(Incident.status == "resolved")
+    dismissed_count = count_incidents(Incident.status == "dismissed")
+    critical_count = count_incidents(Incident.severity == "critical")
+    warning_count = count_incidents(Incident.severity == "warning")
+    info_count = count_incidents(Incident.severity == "info")
+
+    total_cameras = db.scalar(
+        select(func.count(Camera.id)).where(*camera_filters)
+    ) or 0
+    online_cameras = db.scalar(
+        select(func.count(Camera.id)).where(*camera_filters, Camera.online.is_(True))
     ) or 0
 
-    new_count = db.scalar(
-        select(func.count(Incident.id)).where(Incident.status == "new")
-    ) or 0
-
-    working_count = db.scalar(
-        select(func.count(Incident.id)).where(Incident.status == "working")
-    ) or 0
-
-    resolved_count = db.scalar(
-        select(func.count(Incident.id)).where(Incident.status == "resolved")
-    ) or 0
-
-    dismissed_count = db.scalar(
-        select(func.count(Incident.id)).where(Incident.status == "dismissed")
-    ) or 0
-
-    # Критичность
-    critical_count = db.scalar(
-        select(func.count(Incident.id)).where(Incident.severity == "critical")
-    ) or 0
-
-    warning_count = db.scalar(
-        select(func.count(Incident.id)).where(Incident.severity == "warning")
-    ) or 0
-
-    # Камеры
-    total_cameras = db.scalar(select(func.count(Camera.id))) or 0
-    online_cameras = db.scalar(select(func.count(Camera.id)).where(Camera.online.is_(True))) or 0
+    today = date.today()
+    today_start = datetime.combine(today, time.min)
+    tomorrow_start = today_start + timedelta(days=1)
+    today_incidents = db.execute(
+        select(Incident.created_at, Incident.zone, Incident.type).where(
+            *incident_filters,
+            Incident.created_at >= today_start,
+            Incident.created_at < tomorrow_start,
+        )
+    )
+    hourly = [0] * 24
+    zones: Counter[str] = Counter()
+    types: Counter[str] = Counter()
+    for created_at, zone, incident_type in today_incidents:
+        hourly[created_at.hour] += 1
+        zones[zone] += 1
+        types[incident_type] += 1
 
     return {
+        "date": today.isoformat(),
         "incidents": {
             "total": total_incidents,
             "active": new_count + working_count,
@@ -73,10 +71,23 @@ def get_analytics_summary(site_id: Optional[str] = None, db: Session = Depends(g
         "severity": {
             "critical": critical_count,
             "warning": warning_count,
+            "info": info_count,
         },
         "cameras": {
             "total": total_cameras,
             "online": online_cameras,
             "offline": total_cameras - online_cameras,
-        }
+        },
+        "today": {
+            "total": sum(hourly),
+            "hourly": hourly,
+            "by_zone": [
+                {"name": name, "count": count}
+                for name, count in zones.most_common()
+            ],
+            "by_type": [
+                {"name": name, "count": count}
+                for name, count in types.most_common()
+            ],
+        },
     }

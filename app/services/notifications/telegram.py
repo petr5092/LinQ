@@ -263,7 +263,7 @@ class TelegramClient:
         rule_label = event.get("rule_label") or event.get("rule_name") or "Нарушение ТБ"
         cam_name = event.get("camera_name") or event.get("camera_id") or "Камера"
         zone = event.get("zone_name") or event.get("zone_id") or ""
-        ts_str = event.get("timestamp_str") or time.strftime("%H:%M:%S %d.%m.%Y")
+        ts_str = event.get("timestamp_str") or event.get("time") or time.strftime("%H:%M:%S %d.%m.%Y")
         status = event.get("status", "new")
         operator = event.get("assigned_to") or event.get("operator_notes")
 

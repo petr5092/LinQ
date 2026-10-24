@@ -2,7 +2,7 @@ import csv
 import io
 import math
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ from app.schemas.common import PaginatedResponse
 from app.services.incident_service import (
     list_incidents,
     get_incident_by_id,
-    create_incident,
+    create_or_merge_incident,
     update_incident_status,
 )
 from app.services.notifications import notification_manager
@@ -121,23 +121,33 @@ def get_incident(incident_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=IncidentRead, status_code=status.HTTP_201_CREATED)
-async def register_incident(incident_in: IncidentCreate, db: Session = Depends(get_db)):
+async def register_incident(
+    incident_in: IncidentCreate,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     """
     Регистрация инцидента (вызывается CV Engine при детекции нарушения).
     Автоматически инициирует широковещательное WebSocket и Telegram оповещение операторов.
     """
     storage = get_storage_provider()
-    incident_read = create_incident(db=db, incident_in=incident_in, storage_provider=storage)
+    incident_read, created = create_or_merge_incident(
+        db=db,
+        incident_in=incident_in,
+        storage_provider=storage,
+    )
     incident_dict = incident_read.model_dump(mode="json")
 
-    # Отправляем оповещение диспетчерам через WebSocket
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     await notifier.broadcast({
-        "event": "INCIDENT_CREATED",
+        "event": "INCIDENT_CREATED" if created else "INCIDENT_UPDATED",
         "data": incident_dict,
     })
 
-    # Отправляем в Telegram и внешние каналы
-    notification_manager.dispatch_incident(incident_dict)
+    if created:
+        notification_manager.dispatch_incident(incident_dict)
+    else:
+        notification_manager.refresh_incident(incident_dict)
 
     return incident_read
 

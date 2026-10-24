@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 from sqlalchemy import select, func, desc
 from sqlalchemy.orm import Session
@@ -13,6 +13,8 @@ from app.schemas.incident import (
     ContactInfo
 )
 from app.storage.base import BaseStorageProvider
+
+INCIDENT_MERGE_WINDOW_SECONDS = 300
 
 
 def map_incident_to_read(incident: Incident, storage_provider: Optional[BaseStorageProvider] = None) -> IncidentRead:
@@ -116,7 +118,7 @@ def list_incidents(
 
     total = db.scalar(count_query) or 0
     items = db.scalars(
-        query.order_by(desc(Incident.created_at)).offset(offset).limit(limit)
+        query.order_by(desc(Incident.updated_at), desc(Incident.created_at)).offset(offset).limit(limit)
     ).all()
 
     return [map_incident_to_read(inc, storage_provider) for inc in items], total
@@ -174,6 +176,51 @@ def create_incident(
     db.commit()
     db.refresh(incident)
     return map_incident_to_read(incident, storage_provider)
+
+
+def create_or_merge_incident(
+    db: Session,
+    incident_in: IncidentCreate,
+    storage_provider: Optional[BaseStorageProvider] = None,
+) -> Tuple[IncidentRead, bool]:
+    """Merge repeated detections from one camera into its recent open incident."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.execute(
+        select(Camera.id).where(Camera.id == incident_in.camera_id).with_for_update()
+    ).scalar_one_or_none()
+    recent_open = db.scalar(
+        select(Incident)
+        .where(
+            Incident.camera_id == incident_in.camera_id,
+            Incident.title == incident_in.title,
+            Incident.status.in_(("new", "working")),
+        )
+        .order_by(desc(Incident.updated_at))
+        .limit(1)
+        .with_for_update()
+    )
+    if recent_open and recent_open.updated_at:
+        age = (now - recent_open.updated_at).total_seconds()
+        if 0 <= age <= INCIDENT_MERGE_WINDOW_SECONDS:
+            recent_open.time = incident_in.time
+            recent_open.updated_at = now
+            recent_open.severity = max(
+                (recent_open.severity, incident_in.severity),
+                key=lambda severity: {"info": 0, "warning": 1, "critical": 2}.get(severity, 0),
+            )
+            if incident_in.image_key:
+                recent_open.image_key = incident_in.image_key
+            if incident_in.box is not None:
+                recent_open.box = incident_in.box
+            if incident_in.track_id is not None:
+                recent_open.track_id = incident_in.track_id
+            if incident_in.confidence is not None:
+                recent_open.confidence = incident_in.confidence
+            db.commit()
+            db.refresh(recent_open)
+            return map_incident_to_read(recent_open, storage_provider), False
+
+    return create_incident(db, incident_in, storage_provider), True
 
 
 def update_incident_status(
