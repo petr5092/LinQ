@@ -1,0 +1,5 @@
+# Install torch with the CUDA wheel appropriate for your training host first.
+ultralytics>=8.3,<9
+PyYAML>=6,<7
+onnx>=1.16,<2
+onnxruntime>=1.18,<2
