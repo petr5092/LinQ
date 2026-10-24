@@ -27,7 +27,8 @@ def standalone_main():
     from app.store import EventStore, ZoneStore
 
     ap = argparse.ArgumentParser(description="Standalone LinQ Safety Demo")
-    ap.add_argument("--source", action="append", help="synthetic | synthetic:30 | файл | rtsp://…")
+    ap.add_argument("--source", action="append", help="synthetic | synthetic:30 | demo | файл | rtsp://…")
+    ap.add_argument("--demo-video", action="store_true", help="использовать видео из storage/demo_videos/construction_safety.mp4")
     ap.add_argument("--backend", default="mock", choices=["mock", "onnx", "linq"])
     ap.add_argument("--model", help="путь к модели")
     ap.add_argument("--classes", help="имена классов через запятую")
@@ -38,7 +39,10 @@ def standalone_main():
     ap.add_argument("--standalone", action="store_true")
     a, _ = ap.parse_known_args()
 
-    specs = a.source or ["synthetic", "synthetic:30"]
+    if a.demo_video:
+        specs = [os.path.join("storage", "demo_videos", "construction_safety.mp4")]
+    else:
+        specs = a.source or ["synthetic", "synthetic:30"]
     logger = configure_logging()
     logger.info("service_starting standalone backend=%s cameras=%s", a.backend, len(specs))
     det = make_detector(a.backend, a.model, a.classes.split(",") if a.classes else None)

@@ -1,4 +1,5 @@
 services:
+  # 1. Реляционная база данных PostgreSQL 16
   postgres:
     image: postgres:16-alpine
     container_name: linq_postgres
@@ -17,7 +18,51 @@ services:
       timeout: 5s
       retries: 5
 
-  # Опционально: локальное S3-хранилище на MinIO для автономной работы
+  # 2. Сервис бэкенда и видеоаналитики (FastAPI + CV Engine)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linq_backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-linq_safety}
+      - INFERENCE_BACKEND=${INFERENCE_BACKEND:-ONNX_CPU}
+      - ONNX_MODEL_PATH=models/onnx/safety_yolov8n.onnx
+      - TPU_MODEL_PATH=models/tpu/safety_yolov8_h1m.tpu
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=${DEBUG:-True}
+      - STORAGE_TYPE=${STORAGE_TYPE:-local}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage/snapshots:/app/storage/snapshots
+      - ./storage/demo_videos:/app/storage/demo_videos
+      - ./data:/app/data
+      - ./app:/app/app
+      - ./engine:/app/engine
+      - ./run.py:/app/run.py
+      - ./run_worker.py:/app/run_worker.py
+
+  # 3. Фронтенд (React SPA + Nginx Reverse Proxy)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: linq_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html
+
+  # 4. Опционально: локальное S3-хранилище на MinIO
   minio:
     image: minio/minio:latest
     container_name: linq_minio

@@ -143,7 +143,7 @@ def run_camera_worker(
             break
 
         res = pipeline.process_frame(frame_bgr, timestamp=ts)
-        camera_hub.set_frame(camera_id, frame_bgr)
+        camera_hub.set_frame(camera_id, res.annotated_frame)
 
         frame_count += 1
         if frame_count % 10 == 0:
@@ -167,13 +167,17 @@ def main():
     parser.add_argument("--backend", default=None, choices=["linq_tpu", "onnx_cpu", "mock"],
                         help="Вычислительный бэкенд инференса (по умолчанию из .env)")
     parser.add_argument("--model", default=None, help="Путь к файлу нейросети (.tpu или .onnx)")
+    parser.add_argument("--demo-video", action="store_true", help="использовать видео из storage/demo_videos/construction_safety.mp4")
     parser.add_argument("--web", action="store_true", help="Запустить веб-сервер FastAPI параллельно с воркером")
     parser.add_argument("--port", type=int, default=8000, help="Порт веб-сервера")
     args = parser.parse_args()
 
     backend = args.backend or settings.INFERENCE_BACKEND.lower()
     model = args.model or (settings.TPU_MODEL_PATH if "tpu" in backend else settings.ONNX_MODEL_PATH)
-    sources = args.source or ["synthetic", "synthetic:30"]
+    if args.demo_video:
+        sources = ["storage/demo_videos/construction_safety.mp4"]
+    else:
+        sources = args.source or ["synthetic", "synthetic:30"]
 
     stop_event = threading.Event()
     threads = []
@@ -181,7 +185,7 @@ def main():
     notification_manager.start()
 
     for idx, src_spec in enumerate(sources, 1):
-        cam_id = f"cam_{idx:02d}"
+        cam_id = f"CAM-{idx:02d}"
         t = threading.Thread(
             target=run_camera_worker,
             args=(cam_id, src_spec, backend, model, stop_event),

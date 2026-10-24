@@ -40,7 +40,7 @@ SEED_SITES = [
 ]
 
 SEED_CAMERAS = [
-    {"id": "CAM-01", "name": "Сборочный участок", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
+    {"id": "CAM-01", "name": "Сборочный участок", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "construction", "rtsp_url": "/videos/construction_safety.mp4", "online": True},
     {"id": "CAM-02", "name": "Линия сборки", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
     {"id": "CAM-03", "name": "Участок станков", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
     {"id": "CAM-04", "name": "Проход между станками", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
@@ -72,11 +72,11 @@ SEED_INCIDENTS = [
         "time": "14:32:08",
         "severity": "critical",
         "type": "person",
-        "description": "Сотрудник находится в зоне работы оборудования без защитной каски более 15 секунд.",
+        "description": "Сотрудник находится в зоне монтажных работ без защитной каски более 15 секунд.",
         "action": "Свяжитесь с мастером смены. Остановите работы до устранения нарушения.",
-        "image_key": "workshop",
+        "image_key": "construction",
         "status": "new",
-        "box": [63, 43, 9, 32],
+        "box": [34.5, 34.6, 13.6, 55.1],
         "employee_name": "Иван Петров",
         "employee_role": "Оператор станка · Цех № 1",
         "employee_number": "00482",
@@ -213,6 +213,7 @@ def seed_database():
                     workshop=c_data["workshop"],
                     site_id=c_data["site_id"],
                     image_placeholder=c_data["image_placeholder"],
+                    rtsp_url=c_data.get("rtsp_url"),
                     online=c_data["online"],
                     last_heartbeat=datetime.utcnow()
                 )

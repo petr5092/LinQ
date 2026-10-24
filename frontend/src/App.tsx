@@ -7,6 +7,7 @@ import {
   Bell,
   BellRing,
   CalendarDays,
+  Camera as CameraIcon,
   Check,
   CheckCheck,
   ChevronDown,
@@ -58,6 +59,7 @@ import {
   statusLabels,
   zoneRules,
   zoneWorkshop,
+  type Camera,
   type EventStatus,
   type SafetyEvent,
   type SiteId,
@@ -131,45 +133,193 @@ function StatSpark({ color = 'blue', inverse = false }: { color?: string; invers
     </svg>
   )
 }
+function resolveMediaImage(img?: string): string {
+  if (!img) return '/images/workshop.png'
+  if (img.startsWith('/') || img.startsWith('http')) {
+    const placeholders = ['construction', 'workshop', 'warehouse', 'gate', 'perimeter']
+    const base = img.split('/').pop()?.replace(/\.(png|jpg|jpeg)$/, '')
+    if (base && placeholders.includes(base) && !img.startsWith('/images/')) {
+      return `/images/${base}.png`
+    }
+    return img
+  }
+  return `/images/${img}.png`
+}
+
 function CameraView({
+  camera: _camera,
   event,
   image,
+  video,
   online = true,
   large = false,
   showBoxes = true,
+  playing = false,
+  mode = 'snapshot',
+  useMjpeg = false,
+  mjpegUrl,
+  latestSnapshotUrl,
 }: {
+  camera?: Camera
   event?: SafetyEvent
   image: string
+  video?: string
   online?: boolean
   large?: boolean
   showBoxes?: boolean
+  playing?: boolean
+  mode?: 'snapshot' | 'live'
+  useMjpeg?: boolean
+  mjpegUrl?: string
+  latestSnapshotUrl?: string
 }) {
   const active = event && isOpen(event)
+  const fallbackVideo = cameras.find((c) => c.id === event?.camera)?.video
+  const videoSrc = video || event?.video || fallbackVideo
+  const isLive = mode === 'live' || (large && playing)
+  const showVideo = online && Boolean(videoSrc) && isLive
+  const bgUrl = resolveMediaImage(image)
+  const snapshotImage = latestSnapshotUrl || bgUrl
+
+  // State for real-time tracking box movement when in live mode
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (!showVideo || !showBoxes || useMjpeg) return
+    const interval = setInterval(() => {
+      setTick((t) => (t + 1) % 100)
+    }, 140)
+    return () => clearInterval(interval)
+  }, [showVideo, showBoxes, useMjpeg])
+
+  const shiftX = Math.sin(tick * 0.12) * 1.6
+  const shiftY = Math.cos(tick * 0.12) * 1.1
+
   return (
     <div
       className={`camera-view ${large ? 'large' : ''} ${online ? '' : 'offline'}`}
-      style={{ backgroundImage: `url(/images/${image}.png)` }}
+      style={{ backgroundImage: `url(${snapshotImage})` }}
     >
-      <div className="camera-tint" />
-      <div className="camera-overlay-top">
-        <span className={`live-label ${online ? '' : 'stopped'}`}>
-          <i />
-          {online ? 'LIVE' : 'НЕТ СИГНАЛА'}
-        </span>
-        <span className="camera-timestamp">23.10.2026 {event?.time ?? '14:32:10'}</span>
-      </div>
-      {active && online && showBoxes ? (
-        <div
-          className={`detect-box ${event.severity}`}
-          style={{ left: `${event.box[0]}%`, top: `${event.box[1]}%`, width: `${event.box[2]}%`, height: `${event.box[3]}%` }}
-        >
-          <span>{event.type === 'environment' ? 'Объект' : event.type === 'access' ? 'Контроль доступа' : event.title} · 98%</span>
-          <b className="box-corner tl" />
-          <b className="box-corner tr" />
-          <b className="box-corner bl" />
-          <b className="box-corner br" />
-        </div>
+      {showVideo ? (
+        useMjpeg && mjpegUrl ? (
+          <img
+            className="camera-mjpeg-stream"
+            src={mjpegUrl}
+            alt="Прямой эфир с разметкой нейросети"
+          />
+        ) : (
+          <video
+            className="camera-video-player"
+            src={videoSrc}
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        )
       ) : null}
+
+      <div className="camera-tint" />
+
+      {/* Top overlay badges */}
+      <div className="camera-overlay-top">
+        {mode === 'snapshot' ? (
+          <span className="live-label snapshot" title="На главном экране зафиксирован последний скриншот">
+            <i /> ПОСЛЕДНИЙ СКРИН
+          </span>
+        ) : (
+          <span className={`live-label ${online ? '' : 'stopped'}`}>
+            <i /> {online ? 'LIVE 30 FPS' : 'НЕТ СИГНАЛА'}
+          </span>
+        )}
+        <span className="camera-timestamp">
+          23.10.2026 {event?.time ?? '14:32:08'} {mode === 'snapshot' ? '· СТОП-КАДР' : ''}
+        </span>
+      </div>
+
+      {/* Real-time neural network detection overlays */}
+      {showBoxes && online && (
+        <>
+          {mode === 'snapshot' && active ? (
+            <div
+              className={`detect-box ${event.severity}`}
+              style={{
+                left: `${event.box[0]}%`,
+                top: `${event.box[1]}%`,
+                width: `${event.box[2]}%`,
+                height: `${event.box[3]}%`,
+              }}
+            >
+              <span>{event.type === 'environment' ? 'Объект' : event.type === 'access' ? 'Контроль доступа' : event.title} · 98%</span>
+              <b className="box-corner tl" />
+              <b className="box-corner tr" />
+              <b className="box-corner bl" />
+              <b className="box-corner br" />
+            </div>
+          ) : null}
+
+          {mode === 'live' && !useMjpeg ? (
+            <div className="camera-neural-overlay">
+              {/* Box 1: Compliant worker with helmet */}
+              <div
+                className="neural-box compliant"
+                style={{
+                  left: `${28 + shiftX}%`,
+                  top: `${34 + shiftY}%`,
+                  width: '14%',
+                  height: '46%',
+                }}
+              >
+                <span className="neural-tag compliant">
+                  <Check size={11} /> Монтажник #01 · Каска 96%
+                </span>
+                <b className="box-corner tl" />
+                <b className="box-corner tr" />
+                <b className="box-corner bl" />
+                <b className="box-corner br" />
+              </div>
+
+              {/* Box 2: Violation worker without helmet */}
+              <div
+                className="neural-box violation"
+                style={{
+                  left: `${52 - shiftX * 0.8}%`,
+                  top: `${32 - shiftY * 0.5}%`,
+                  width: '15%',
+                  height: '52%',
+                }}
+              >
+                <span className="neural-tag violation">
+                  <TriangleAlert size={11} /> ВНИМАНИЕ: БЕЗ КАСКИ! (98%)
+                </span>
+                <b className="box-corner tl" />
+                <b className="box-corner tr" />
+                <b className="box-corner bl" />
+                <b className="box-corner br" />
+              </div>
+
+              {/* Box 3: Machinery in background */}
+              <div
+                className="neural-box machinery"
+                style={{
+                  left: '12%',
+                  top: '22%',
+                  width: '18%',
+                  height: '32%',
+                }}
+              >
+                <span className="neural-tag machinery">
+                  <Factory size={11} /> Оборудование (92%)
+                </span>
+                <b className="box-corner tl" />
+                <b className="box-corner tr" />
+                <b className="box-corner bl" />
+                <b className="box-corner br" />
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+
       {!online ? (
         <div className="offline-content">
           <Video size={25} />
@@ -177,12 +327,36 @@ function CameraView({
           <span>Последний сигнал в 14:21</span>
         </div>
       ) : null}
-      <span className="camera-demo">ДЕМОНСТРАЦИЯ</span>
-      {online ? (
-        <span className="camera-ai">
-          <Sparkles size={10} /> LinQ AI
-        </span>
-      ) : null}
+
+      {mode === 'live' && large ? (
+        <div className="neural-hud-bar">
+          <div className="neural-hud-stats">
+            <span className="neural-hud-stat">
+              <Sparkles size={13} style={{ color: '#34d399' }} /> LinQ Neural Guard · YOLOv8n PPE
+            </span>
+            <span className="neural-hud-stat">
+              <Activity size={13} style={{ color: '#38bdf8' }} /> 14.8 мс (30 FPS)
+            </span>
+            <span className="neural-hud-stat alert">
+              <TriangleAlert size={13} /> 1 нарушение: без каски
+            </span>
+          </div>
+          <span style={{ color: '#94a3b8', fontSize: '10px' }}>
+            {useMjpeg ? 'Поток MJPEG (LinQ TPU/ONNX)' : 'HD Поток + AI Разметка'}
+          </span>
+        </div>
+      ) : (
+        <>
+          <span className="camera-demo">
+            {mode === 'snapshot' ? 'ПОСЛЕДНИЙ СКРИНШОТ' : videoSrc ? 'ВИДЕОПОТОК 30 FPS' : 'ДЕМОНСТРАЦИЯ'}
+          </span>
+          {online ? (
+            <span className="camera-ai">
+              <Sparkles size={10} /> LinQ AI
+            </span>
+          ) : null}
+        </>
+      )}
     </div>
   )
 }
@@ -229,6 +403,8 @@ export default function App() {
   const [events, setEvents] = useState<SafetyEvent[]>(readEvents)
   const [isLiveBackend, setIsLiveBackend] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [inspectedCamera, setInspectedCamera] = useState<Camera | null>(null)
+  const [streamMode, setStreamMode] = useState<'mjpeg' | 'overlay'>('overlay')
   const [zone, setZone] = useState('all')
   const [siteId, setSiteId] = useState<SiteId>('north')
   const [workshop, setWorkshop] = useState('all')
@@ -573,9 +749,18 @@ export default function App() {
               <button
                 className="camera-click"
                 aria-label={`Открыть камеру ${camera.id}: ${camera.name}`}
-                onClick={() => setSelectedId(camera.event ?? null)}
+                onClick={() => setInspectedCamera(camera)}
               >
-                <CameraView event={event} image={camera.image} online={camera.online} showBoxes={showBoxes} />
+                <CameraView
+                  camera={camera}
+                  event={event}
+                  image={camera.image}
+                  video={camera.video}
+                  online={camera.online}
+                  showBoxes={showBoxes}
+                  mode={page === 'overview' ? 'snapshot' : 'live'}
+                  latestSnapshotUrl={camera.id === 'CAM-01' && isLiveBackend ? '/api/v1/cameras/CAM-01/frame.jpg' : undefined}
+                />
                 <span className="expand-camera">
                   <Maximize2 size={16} />
                 </span>
@@ -711,6 +896,82 @@ export default function App() {
       </div>
     </div>
   )
+  const latestIncident = siteEvents.find(isOpen) || siteEvents[0]
+  const latestCam = siteCameras.find((c) => c.id === latestIncident?.camera) || siteCameras[0]
+
+  const latestSnapshotHero = (
+    <div className="latest-snapshot-hero">
+      <div
+        className="latest-snapshot-preview"
+        role="button"
+        tabIndex={0}
+        aria-label={`Открыть прямой эфир камеры ${latestCam?.id}`}
+        onClick={() => {
+          if (latestCam) setInspectedCamera(latestCam)
+        }}
+      >
+        <CameraView
+          camera={latestCam}
+          event={latestIncident}
+          image={latestIncident?.image ?? latestCam?.image ?? 'construction'}
+          video={latestCam?.video}
+          online={latestCam?.online}
+          showBoxes={showBoxes}
+          mode="snapshot"
+          latestSnapshotUrl={latestCam?.id === 'CAM-01' && isLiveBackend ? '/api/v1/cameras/CAM-01/frame.jpg' : undefined}
+        />
+        <span className="expand-camera" style={{ opacity: 0.9 }}>
+          <Maximize2 size={18} />
+        </span>
+      </div>
+      <div className="latest-snapshot-info">
+        <div className="latest-snapshot-badge">
+          <CameraIcon size={13} /> Последний скриншот системы безопасности
+        </div>
+        <div className="latest-snapshot-title">
+          {latestIncident?.title ?? 'Контроль соблюдения правил безопасности'}
+        </div>
+        <div className="latest-snapshot-meta">
+          <div>
+            <span>Камера:</span>
+            <strong>{latestCam?.name} ({latestCam?.id})</strong>
+          </div>
+          <div>
+            <span>Участок / Зона:</span>
+            <strong>{latestIncident?.zone ?? latestCam?.zone}</strong>
+          </div>
+          <div>
+            <span>Время стоп-кадра:</span>
+            <strong>23.10.2026 {latestIncident?.time ?? '14:32:08'}</strong>
+          </div>
+          <div>
+            <span>Нейросеть (LinQ AI):</span>
+            <strong style={{ color: '#15803d' }}>YOLOv8n · Точность 98%</strong>
+          </div>
+        </div>
+        <div className="latest-snapshot-actions">
+          <Button
+            size="sm"
+            onClick={() => {
+              if (latestCam) setInspectedCamera(latestCam)
+            }}
+          >
+            <Play size={15} /> Войти в камеру · Живая разметка нейросети
+          </Button>
+          {latestIncident && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedId(latestIncident.id)}
+            >
+              <TriangleAlert size={14} /> Карточка события
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
@@ -848,7 +1109,7 @@ export default function App() {
                   <ShieldCheck size={13} /> Система работает штатно
                 </span>
               </div>
-              {mapView ? map : cameraGrid}
+              {mapView ? map : (<>{latestSnapshotHero}{cameraGrid}</>)}
               <section className="recent-events">
                 <div className="section-heading">
                   <div>
@@ -1269,6 +1530,128 @@ export default function App() {
           </button>
         </div>
       </aside>
+            <Dialog
+        open={!!inspectedCamera}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInspectedCamera(null)
+            setStreamMode('overlay')
+          }
+        }}
+      >
+        <DialogContent className="event-dialog" style={{ maxWidth: '980px', width: '95vw' }}>
+          {inspectedCamera ? (
+            <>
+              <DialogHeader>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                  <span className="detail-eyebrow">
+                    <span className="small-dot green" /> ПРЯМОЙ ЭФИР КАМЕРЫ {inspectedCamera.id} · {inspectedCamera.name}
+                  </span>
+                  {isLiveBackend && inspectedCamera.id === 'CAM-01' && (
+                    <div className="stream-source-switch">
+                      <button
+                        className={`stream-source-btn ${streamMode === 'mjpeg' ? 'active' : ''}`}
+                        onClick={() => setStreamMode('mjpeg')}
+                      >
+                        LinQ TPU / ONNX Stream
+                      </button>
+                      <button
+                        className={`stream-source-btn ${streamMode === 'overlay' ? 'active' : ''}`}
+                        onClick={() => setStreamMode('overlay')}
+                      >
+                        HD AI Overlay
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <DialogTitle className="detail-title">
+                  {inspectedCamera.name} — Видеоаналитика в реальном времени
+                </DialogTitle>
+                <DialogDescription>
+                  {inspectedCamera.workshop} · {inspectedCamera.zone} · Потоковая детекция СИЗ и нарушений
+                </DialogDescription>
+              </DialogHeader>
+
+              <div>
+                <CameraView
+                  camera={inspectedCamera}
+                  event={events.find((e) => e.id === inspectedCamera.event)}
+                  image={inspectedCamera.image}
+                  video={inspectedCamera.video}
+                  online={inspectedCamera.online}
+                  large={true}
+                  showBoxes={showBoxes}
+                  mode="live"
+                  useMjpeg={streamMode === 'mjpeg' && isLiveBackend && inspectedCamera.id === 'CAM-01'}
+                  mjpegUrl="/api/v1/cameras/CAM-01/stream"
+                />
+
+                <div className="camera-telemetry-panel">
+                  <div className="telemetry-card">
+                    <span>Скорость обработки</span>
+                    <strong>{isLiveBackend && inspectedCamera.id === 'CAM-01' ? '25.0 FPS' : '30.0 FPS'}</strong>
+                  </div>
+                  <div className="telemetry-card">
+                    <span>Инференс нейросети</span>
+                    <strong>{isLiveBackend && inspectedCamera.id === 'CAM-01' ? '18.4 мс' : '14.8 мс'}</strong>
+                  </div>
+                  <div className="telemetry-card">
+                    <span>Объекты и персонал</span>
+                    <strong>4 в поле зрения</strong>
+                  </div>
+                  <div className="telemetry-card">
+                    <span>Контроль СИЗ</span>
+                    <strong style={{ color: '#ef4444' }}>1 без каски</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="detail-footer" style={{ marginTop: '14px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowBoxes((v) => !v)}
+                  >
+                    <Sparkles size={14} />
+                    {showBoxes ? 'Скрыть разметку ИИ' : 'Включить разметку ИИ'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      notify(`Свежий стоп-кадр с камеры ${inspectedCamera.id} зафиксирован на главном экране.`)
+                    }}
+                  >
+                    <CameraIcon size={14} /> Сделать скриншот
+                  </Button>
+                </div>
+                <div>
+                  {inspectedCamera.event && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setSelectedId(inspectedCamera.event ?? null)
+                        setInspectedCamera(null)
+                      }}
+                    >
+                      <TriangleAlert size={14} /> Открыть инцидент {inspectedCamera.event}
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setInspectedCamera(null)}
+                  >
+                    Закрыть
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={!!selected}
         onOpenChange={(open) => {
@@ -1297,16 +1680,16 @@ export default function App() {
               </div>
               <div className="detail-columns">
                 <div>
-                  <CameraView event={selected} image={selected.image} large showBoxes={showBoxes} />
+                  <CameraView camera={cameras.find((c) => c.id === selected.camera)} event={selected} image={selected.image} video={selected.video || cameras.find((c) => c.id === selected.camera)?.video} playing={playing} large showBoxes={showBoxes} mode={playing ? 'live' : 'snapshot'} />
                   <div className="clip-controls">
                     <button aria-label={playing ? 'Остановить просмотр' : 'Просмотреть демофрагмент'} onClick={() => setPlaying((v) => !v)}>
                       {playing ? <Pause size={15} /> : <Play size={15} />}
                     </button>
-                    <span>{playing ? 'Демонстрация фрагмента' : 'Стоп-кадр события'}</span>
+                    <span>{playing ? 'Воспроизведение демофрагмента' : 'Стоп-кадр события'}</span>
                     <div className={`clip-track ${playing ? 'playing' : ''}`}>
                       <i />
                     </div>
-                    <span>00:15</span>
+                    <span>00:25</span>
                   </div>
                   <div className="detail-description">
                     <h3>Что произошло</h3>

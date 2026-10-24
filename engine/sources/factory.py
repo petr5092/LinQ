@@ -26,6 +26,12 @@ def create_video_source(
     """
     spec_clean = spec.strip()
 
+    if spec_clean in ("demo", "demo_video", "demo.mp4"):
+        for candidate in ("construction_safety.mp4", "16106604-uhd_3840_2160_30fps.mp4"):
+            demo_path = os.path.join("storage", "demo_videos", candidate)
+            if os.path.isfile(demo_path):
+                return VideoFileSource(filepath=demo_path, loop=loop, realtime=realtime)
+
     if spec_clean.startswith("synthetic"):
         phase = 0.0
         if ":" in spec_clean:

@@ -18,11 +18,22 @@ from app.storage.base import BaseStorageProvider
 def map_incident_to_read(incident: Incident, storage_provider: Optional[BaseStorageProvider] = None) -> IncidentRead:
     """Преобразование ORM-модели инцидента в схему IncidentRead с URL снапшота."""
     snapshot_url = None
+    placeholders = {'construction', 'workshop', 'warehouse', 'gate', 'perimeter'}
     if incident.image_key:
-        if storage_provider:
+        if incident.image_key in placeholders:
+            snapshot_url = f'/images/{incident.image_key}.png'
+        elif incident.image_key.startswith('/') or incident.image_key.startswith('http'):
+            snapshot_url = incident.image_key
+        elif storage_provider:
             snapshot_url = storage_provider.get_snapshot_url(incident.image_key)
         else:
             snapshot_url = incident.image_key
+
+    video_url = None
+    if getattr(incident, 'camera', None) and incident.camera.rtsp_url:
+        video_url = incident.camera.rtsp_url
+    elif incident.camera_id == 'CAM-01':
+        video_url = '/videos/construction_safety.mp4' 
 
     employee = None
     if incident.employee_name:
@@ -55,6 +66,7 @@ def map_incident_to_read(incident: Incident, storage_provider: Optional[BaseStor
         action=incident.action,
         image_key=incident.image_key,
         snapshot_url=snapshot_url,
+        video_url=video_url,
         status=incident.status,
         box=incident.box,
         employee_name=incident.employee_name,

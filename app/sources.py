@@ -156,10 +156,15 @@ class VideoSource:
 
 
 def open_source(spec, realtime=True):
-    """'synthetic' | 'synthetic:30' (сдвиг сценария, сек) | папка | файл | rtsp://..."""
+    """'synthetic' | 'synthetic:30' (сдвиг сценария, сек) | 'demo' | папка | файл | rtsp://..."""
     if spec.startswith("synthetic"):
         phase = float(spec.split(":")[1]) if ":" in spec else 0.0
         return SyntheticSource(phase=phase, realtime=realtime)
+    if spec in ("demo", "demo_video", "demo.mp4"):
+        for candidate in ("construction_safety.mp4", "16106604-uhd_3840_2160_30fps.mp4"):
+            demo_path = os.path.join(config.ROOT, "storage", "demo_videos", candidate)
+            if os.path.isfile(demo_path):
+                return VideoSource(demo_path, realtime=realtime)
     if os.path.isdir(spec):
         return ImageFolderSource(spec, realtime=realtime)
     return VideoSource(spec, realtime=realtime)

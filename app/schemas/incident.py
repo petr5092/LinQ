@@ -61,6 +61,7 @@ class IncidentUpdateStatus(BaseModel):
 class IncidentRead(IncidentBase):
     id: str
     snapshot_url: Optional[str] = None
+    video_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

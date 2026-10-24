@@ -77,6 +77,22 @@ class LocalONNXEngine(BaseInferenceEngine):
         if len(shape) == 4 and isinstance(shape[2], int) and isinstance(shape[3], int):
             self.input_size = (shape[3], shape[2])  # width, height
 
+        # Автоматическая загрузка словаря классов при наличии JSON рядом с моделью
+        classes_candidates = [
+            path.replace(".onnx", "_classes.json"),
+            os.path.join(os.path.dirname(path), "safety_yolov8n_classes.json"),
+        ]
+        for cpath in classes_candidates:
+            if os.path.exists(cpath):
+                try:
+                    import json
+                    with open(cpath, "r", encoding="utf-8") as f_cls:
+                        loaded = json.load(f_cls)
+                        self.class_names = {int(k): v for k, v in loaded.items()}
+                        break
+                except Exception:
+                    pass
+
         self.model_path = path
         self.is_loaded = True
 
@@ -144,7 +160,7 @@ class LocalONNXEngine(BaseInferenceEngine):
             return []
 
         # Приводим к размерности (N, 4 + C), где N — количество кандидатов
-        if output.shape[1] < 5 or (len(self.class_names) > 0 and output.shape[0] == 4 + len(self.class_names)):
+        if output.shape[0] < output.shape[1] or output.shape[1] < 5 or (len(self.class_names) > 0 and output.shape[0] == 4 + len(self.class_names)):
             output = output.T
 
         num_candidates, num_attrs = output.shape

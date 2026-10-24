@@ -68,9 +68,37 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Notify] Предупреждение при запуске службы оповещений: {e}")
 
+    # Запуск фонового CV-воркера для онлайн-камеры CAM-01
+    import threading
+    stop_cv_event = threading.Event()
+    demo_video_path = str(BASE_DIR / "storage" / "demo_videos" / "construction_safety.mp4")
+    if Path(demo_video_path).exists():
+        try:
+            from run_worker import run_camera_worker
+            cv_thread = threading.Thread(
+                target=run_camera_worker,
+                args=(
+                    "CAM-01",
+                    demo_video_path,
+                    settings.INFERENCE_BACKEND.lower(),
+                    settings.ONNX_MODEL_PATH,
+                    stop_cv_event,
+                ),
+                daemon=True,
+                name="cv_worker_CAM-01",
+            )
+            cv_thread.start()
+            logger.info("[CV Worker] Видеоаналитика нейросети для CAM-01 запущена в реальном времени.")
+        except Exception as e:
+            logger.warning(f"[CV Worker] Ошибка запуска фонового воркера CAM-01: {e}")
+
     yield
 
     logger.info("=== Остановка LinQ Safety Guard Backend ===")
+    try:
+        stop_cv_event.set()
+    except Exception:
+        pass
     try:
         notification_manager.stop()
     except Exception:
@@ -103,10 +131,24 @@ snapshots_path = BASE_DIR / "storage" / "snapshots"
 snapshots_path.mkdir(parents=True, exist_ok=True)
 app.mount("/static/snapshots", StaticFiles(directory=str(snapshots_path)), name="snapshots")
 
+# Монтирование демонстрационных видеозаписей
+demo_videos_path = BASE_DIR / "storage" / "demo_videos"
+demo_videos_path.mkdir(parents=True, exist_ok=True)
+app.mount("/static/videos", StaticFiles(directory=str(demo_videos_path)), name="demo-videos")
+app.mount("/videos", StaticFiles(directory=str(demo_videos_path)), name="videos")
+
+# Монтирование графических ракурсов камер
+images_path = BASE_DIR / "frontend" / "public" / "images"
+if images_path.exists():
+    app.mount("/images", StaticFiles(directory=str(images_path)), name="images")
+
 # Монтирование собранного веб-интерфейса (SPA)
 frontend_dist = BASE_DIR / "frontend" / "dist"
 if frontend_dist.exists():
     app.mount("/ui", StaticFiles(directory=str(frontend_dist), html=True), name="frontend-ui")
+    assets_path = frontend_dist / "assets"
+    if assets_path.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_path)), name="frontend-assets")
 
 # Подключение маршрутов API
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -127,6 +169,7 @@ def root():
         "docs_url": "/docs",
         "health_url": f"{settings.API_V1_PREFIX}/health",
         "websocket_url": "/ws/events",
+        "demo_video": "/videos/construction_safety.mp4",
     }
     frontend_dist = BASE_DIR / "frontend" / "dist"
     if frontend_dist.exists():

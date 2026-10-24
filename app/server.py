@@ -94,7 +94,9 @@ class Handler(BaseHTTPRequestHandler):
         q, p = parse_qs(u.query), u.path
         try:
             if p in ("/", "/index.html"):
-                with open(os.path.join(WEB, "index.html"), "rb") as f:
+                dist_index = os.path.join(WEB, "dist", "index.html")
+                target = dist_index if os.path.isfile(dist_index) else os.path.join(WEB, "index.html")
+                with open(target, "rb") as f:
                     return self._send(200, f.read(), "text/html; charset=utf-8")
             if p == "/favicon.ico":
                 return self._send(204, b"", "image/x-icon")
@@ -172,6 +174,15 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/stream/([\w\-]+)", p)
             if m:
                 return self._mjpeg(m.group(1))
+            if p.startswith(("/videos/", "/images/", "/assets/")):
+                import mimetypes
+                rel = p.lstrip("/")
+                for base in (os.path.join(WEB, "dist"), os.path.join(WEB, "public"), config.ROOT, os.path.join(config.ROOT, "storage")):
+                    fp = os.path.join(base, rel)
+                    if os.path.isfile(fp):
+                        ctype, _ = mimetypes.guess_type(fp)
+                        with open(fp, "rb") as f:
+                            return self._send(200, f.read(), ctype or "application/octet-stream")
             if p == "/api/live":
                 return self._sse()
             self._send(404, {"error": "РЅРµ РЅР°Р№РґРµРЅРѕ"})

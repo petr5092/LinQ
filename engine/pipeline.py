@@ -143,7 +143,7 @@ class CVPipeline:
 
         # 5. Отрисовка оверлеев и аннотаций
         annotated_frame = (
-            self.render_overlay(frame, tracked_objects, raw_violations, active_incidents)
+            self.render_overlay(frame, tracked_objects, raw_violations, active_incidents, detections)
             if render_annotations
             else frame
         )
@@ -204,6 +204,7 @@ class CVPipeline:
         tracks: List[TrackedObject],
         violations: List[RuleViolation],
         active_incidents: List[ConfirmedIncident],
+        detections: Optional[List[Detection]] = None,
     ) -> np.ndarray:
         """
         Профессиональная отрисовка оверлея с цветовой дифференциацией нарушителей и зон.
@@ -280,6 +281,27 @@ class CVPipeline:
             if len(track.history) > 1:
                 hist_pts = np.array(track.history[-15:], dtype=np.int32).reshape((-1, 1, 2))
                 cv2.polylines(canvas, [hist_pts], isClosed=False, color=color, thickness=1)
+
+        # 2.5 Отрисовка детекций СИЗ (каски, жилеты, нарушения) от нейросети
+        if detections:
+            for det in detections:
+                if det.class_name in ("helmet", "no_helmet", "vest", "no_vest", "person"):
+                    bx1, by1, bx2, by2 = int(det.bbox.x1), int(det.bbox.y1), int(det.bbox.x2), int(det.bbox.y2)
+                    is_violation = det.class_name.startswith("no_")
+                    det_color = (0, 0, 240) if is_violation else (0, 220, 100) if "helmet" in det.class_name else (255, 180, 0)
+                    cv2.rectangle(canvas, (bx1, by1), (bx2, by2), det_color, 2 if not is_violation else 3)
+                    
+                    label_map = {
+                        "helmet": "КАСКА",
+                        "no_helmet": "НЕТ КАСКИ!",
+                        "vest": "ЖИЛЕТ",
+                        "no_vest": "НЕТ ЖИЛЕТА!",
+                        "person": "ЧЕЛОВЕК",
+                    }
+                    lbl = f"{label_map.get(det.class_name, det.class_name)} {int(det.confidence * 100)}%"
+                    (lw, lh), _ = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                    cv2.rectangle(canvas, (bx1, max(0, by1 - lh - 4)), (bx1 + lw + 4, max(lh + 4, by1)), det_color, -1)
+                    cv2.putText(canvas, lbl, (bx1 + 2, max(lh, by1 - 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
 
         # 3. Информационный статус-бар вверху кадра
         active_count = len(active_incidents)

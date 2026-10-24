@@ -30,6 +30,8 @@ interface BackendIncident {
   action?: string
   image_key?: string
   snapshot_url?: string
+  video_url?: string
+  video?: string
   status: EventStatus
   box?: number[]
   employee?: BackendEmployee
@@ -51,6 +53,8 @@ interface BackendCamera {
   workshop?: string
   site_id?: string
   image_placeholder?: string
+  rtsp_url?: string
+  video?: string
   online?: boolean
 }
 
@@ -97,6 +101,7 @@ export function mapBackendIncidentToSafetyEvent(item: BackendIncident): SafetyEv
     description: item.description || '',
     action: item.action || '',
     image: item.snapshot_url || item.image_key || 'workshop',
+    video: item.video_url || item.video || (item.camera_id === 'CAM-01' ? '/videos/construction_safety.mp4' : undefined),
     employee: item.employee?.name
       ? {
           name: item.employee.name,
@@ -131,6 +136,8 @@ export function mapBackendCameraToCamera(item: BackendCamera): Camera {
     workshop: item.workshop || '',
     site: (item.site_id || 'north') as SiteId,
     image: item.image_placeholder || 'workshop',
+    video: item.rtsp_url || item.video || (item.id === 'CAM-01' ? '/videos/construction_safety.mp4' : undefined),
+    event: item.id === 'CAM-01' ? 'TK-1048' : undefined,
     online: item.online ?? true,
   }
 }

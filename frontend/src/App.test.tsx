@@ -185,4 +185,27 @@ describe("<App /> Component Integration", () => {
       expect(screen.getByText(/Журнал событий выгружен в CSV/i)).toBeInTheDocument()
     })
   })
+
+  it("displays latest screenshot on overview and opens real-time neural camera view on click", async () => {
+    await act(async () => {
+      render(<App />)
+    })
+
+    // 1. Verify latest screenshot section and badges on the main screen
+    expect(screen.getByText(/Последний скриншот системы безопасности/i)).toBeInTheDocument()
+    const snapshotBadges = screen.getAllByText(/ПОСЛЕДНИЙ СКРИН/i)
+    expect(snapshotBadges.length).toBeGreaterThan(0)
+
+    // 2. Click on camera to enter real-time neural network video view
+    const cameraClickButton = screen.getByRole("button", { name: /Открыть камеру CAM-01/i })
+    await act(async () => {
+      fireEvent.click(cameraClickButton)
+    })
+
+    // 3. Verify real-time video modal opens with neural network analytics
+    await waitFor(() => {
+      expect(screen.getByText(/Видеоаналитика в реальном времени/i)).toBeInTheDocument()
+      expect(screen.getByText(/LinQ Neural Guard/i)).toBeInTheDocument()
+    })
+  })
 })
