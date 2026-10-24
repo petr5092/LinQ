@@ -64,6 +64,32 @@ export interface AnalyticsSummary {
   }
 }
 
+export interface BrowserCameraFrameResult {
+  camera_id: string
+  width: number
+  height: number
+  detections: {
+    class_name: string
+    confidence: number
+    bbox: [number, number, number, number]
+  }[]
+  violations: {
+    description: string
+    class_name: string
+    bbox: [number, number, number, number]
+  }[]
+  new_incidents: string[]
+  metrics: {
+    backend: string
+    inference_ms: number
+    fps: number
+  }
+}
+
+export interface BrowserCameraRegistration {
+  id: string
+}
+
 const API_BASE = '/api/v1'
 
 interface BackendEmployee {
@@ -260,6 +286,56 @@ export const api = {
     const res = await fetch(`${API_BASE}/analytics/summary?site_id=${encodeURIComponent(siteId)}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
+  },
+
+  async processBrowserCameraFrame(cameraId: string, frame: Blob): Promise<BrowserCameraFrameResult> {
+    const res = await fetch(`${API_BASE}/worker/browser-frame/${encodeURIComponent(cameraId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: frame,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(typeof data.detail === 'string' ? data.detail : `Ошибка обработки камеры: HTTP ${res.status}`)
+    }
+    return data as BrowserCameraFrameResult
+  },
+
+  async registerBrowserCamera(
+    siteId: string,
+    name: string,
+    zone: string,
+    workshop: string,
+  ): Promise<BrowserCameraRegistration> {
+    const id = `BROWSER-${crypto.randomUUID()}`
+    const res = await fetch(`${API_BASE}/cameras`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        name,
+        zone,
+        workshop,
+        site_id: siteId,
+        image_placeholder: 'workshop',
+        online: false,
+        fps: 2,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(typeof data.detail === 'string' ? data.detail : `Не удалось зарегистрировать камеру: HTTP ${res.status}`)
+    }
+    return { id: data.id as string }
+  },
+
+  async setBrowserCameraOnline(cameraId: string, online: boolean): Promise<void> {
+    const res = await fetch(`${API_BASE}/cameras/${encodeURIComponent(cameraId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ online }),
+    })
+    if (!res.ok) throw new Error(`Не удалось обновить статус камеры: HTTP ${res.status}`)
   },
 
   async updateStatus(id: string, status: EventStatus): Promise<boolean> {

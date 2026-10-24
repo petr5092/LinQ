@@ -1,13 +1,15 @@
 """CV process boundary: receive completed incidents and store their evidence."""
 import base64
 import binascii
+import logging
 import re
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+import cv2
+import numpy as np
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-import cv2
-import numpy as np
+from starlette.concurrency import run_in_threadpool
 
 from app.db.session import get_db
 from app.db.models.camera import Camera
@@ -15,9 +17,14 @@ from app.schemas.incident import IncidentCreate, IncidentRead
 from app.services.incident_service import create_or_merge_incident, get_incident_by_id
 from app.services.notifications import notification_manager
 from app.services.notifier import notifier
+from app.services.browser_camera import (
+    BrowserCameraConfigurationError,
+    process_browser_frame,
+)
 from app.storage.factory import get_storage_provider
 
 router = APIRouter(prefix='/worker', tags=['CV Worker'])
+log = logging.getLogger(__name__)
 
 
 class WorkerIncident(BaseModel):
@@ -75,3 +82,34 @@ async def ingest_incident(
     else:
         notification_manager.refresh_incident(data)
     return incident
+
+
+@router.post('/browser-frame/{camera_id}')
+async def ingest_browser_frame(
+    camera_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Process one JPEG frame captured by the operator's browser."""
+    camera = db.get(Camera, camera_id)
+    if camera is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, 'Сначала зарегистрируйте камеру в системе.')
+    if request.headers.get('content-type', '').split(';', 1)[0].strip().lower() != 'image/jpeg':
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, 'Ожидается кадр image/jpeg.')
+    jpeg = bytearray()
+    async for chunk in request.stream():
+        jpeg.extend(chunk)
+        if len(jpeg) > 2_000_000:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, 'Размер JPEG не должен превышать 2 МБ.')
+    if not jpeg:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, 'Размер JPEG должен быть от 1 байта до 2 МБ.')
+    try:
+        result = await run_in_threadpool(process_browser_frame, camera, jpeg)
+    except BrowserCameraConfigurationError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except Exception as exc:
+        log.exception('Browser camera frame processing failed camera=%s', camera_id)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, 'Не удалось обработать кадр камеры.') from exc
+    return result

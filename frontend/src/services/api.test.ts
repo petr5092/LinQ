@@ -293,6 +293,48 @@ describe("api service & data mappers", () => {
     })
   })
 
+  describe("api.processBrowserCameraFrame", () => {
+    it("posts a JPEG frame and returns backend detections", async () => {
+      const result = {
+        camera_id: "CAM-01",
+        width: 640,
+        height: 480,
+        detections: [],
+        violations: [],
+        new_incidents: [],
+        metrics: { backend: "ONNX_CPU", inference_ms: 24, fps: 3 },
+      }
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => result,
+      } as Response)
+      const frame = new Blob(["jpeg"], { type: "image/jpeg" })
+
+      await expect(api.processBrowserCameraFrame("CAM-01", frame)).resolves.toEqual(result)
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/v1/worker/browser-frame/CAM-01",
+        expect.objectContaining({
+          method: "POST",
+          headers: { "Content-Type": "image/jpeg" },
+          body: frame,
+        }),
+      )
+    })
+
+    it("shows backend configuration errors to the operator", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ detail: "ONNX model is unavailable" }),
+      } as Response)
+
+      await expect(
+        api.processBrowserCameraFrame("CAM-01", new Blob(["jpeg"])),
+      ).rejects.toThrow("ONNX model is unavailable")
+    })
+  })
+
   describe("api.updateStatus", () => {
     it("sends PATCH request with new status and returns true on 200 OK", async () => {
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({

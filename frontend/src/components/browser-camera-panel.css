@@ -1,0 +1,24 @@
+.browser-camera-panel{display:grid;gap:14px;margin:0 0 22px;padding:18px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.browser-camera-heading,.browser-camera-controls,.browser-camera-footer{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.browser-camera-heading h2{display:flex;align-items:center;gap:8px;margin:0;font-size:15px}
+.browser-camera-heading p,.browser-camera-note{margin:4px 0 0;color:var(--subtle);font-size:12px}
+.browser-camera-status{display:flex;align-items:center;gap:7px;color:var(--subtle);white-space:nowrap;font-size:12px}
+.browser-camera-status i{width:8px;height:8px;border-radius:50%;background:#a3a3a3}
+.browser-camera-status.is-running i{background:#22c55e;box-shadow:0 0 0 3px #22c55322}
+.browser-camera-controls label{display:grid;gap:5px;color:var(--subtle);font-size:11px}
+.browser-camera-controls select{min-width:190px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
+.browser-camera-action{display:flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:0 13px;border:0;border-radius:7px;background:var(--blue);color:#fff;cursor:pointer}
+.browser-camera-action.stop{background:#d95454}
+.browser-camera-preview{position:relative;display:flex;min-height:190px;max-height:520px;align-items:center;justify-content:center;overflow:hidden;border-radius:8px;background:#111}
+.browser-camera-preview video{display:block;width:100%;max-height:520px;object-fit:contain}
+.browser-camera-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.browser-camera-capture{display:none}
+.browser-camera-empty{display:flex;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;gap:9px;color:#c7c7c7;font-size:12px}
+.browser-camera-footer{align-items:flex-start;color:var(--subtle);font-size:11px}
+.browser-camera-footer span:first-child{display:flex;align-items:flex-start;gap:6px}
+.browser-camera-footer svg{flex:none;color:#32885a}
+.browser-camera-message{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:7px;font-size:12px}
+.browser-camera-message.error{background:#fff1f1;color:#b42323}
+.browser-camera-message.alert{background:#fff8e8;color:#8a5a00}
+.browser-camera-note{line-height:1.5}
+@media(max-width:700px){.browser-camera-heading,.browser-camera-controls,.browser-camera-footer{align-items:stretch;flex-direction:column}.browser-camera-status{white-space:normal}.browser-camera-controls select{width:100%}}

@@ -50,6 +50,7 @@ import {
   Users,
 } from 'lucide-react'
 import { FacilityMap } from './components/facility-map'
+import { BrowserCameraPanel } from './components/browser-camera-panel'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -1228,7 +1229,12 @@ export default function App() {
               </section>
             </>
           ) : null}
-          {page === 'cameras' ? <>{cameraGrid}</> : null}
+          {page === 'cameras' ? (
+            <>
+              <BrowserCameraPanel cameras={siteCameras} siteId={siteId} />
+              {cameraGrid}
+            </>
+          ) : null}
           {page === 'events' ? (
             <>
               <div className="journal-summary">
