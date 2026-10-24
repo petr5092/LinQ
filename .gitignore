@@ -60,6 +60,7 @@ data/cv_*.jsonl
 !data/.gitignore
 bench_results.json
 storage/*.sqlite3
+storage/*.db
 storage/snapshots/*
 !storage/snapshots/.gitkeep
 storage/demo_videos/*

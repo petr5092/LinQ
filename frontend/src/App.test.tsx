@@ -208,4 +208,47 @@ describe("<App /> Component Integration", () => {
       expect(screen.getByText(/LinQ Neural Guard/i)).toBeInTheDocument()
     })
   })
+  it("navigates to Training section and checks safety training materials", async () => {
+    await act(async () => {
+      render(<App />)
+    })
+
+    const nav = screen.getByRole("navigation", { name: "Основная навигация" })
+    await act(async () => {
+      fireEvent.click(within(nav).getByRole("button", { name: "Обучение" }))
+    })
+
+    expect(screen.getByRole("heading", { level: 1, name: "Обучение" })).toBeInTheDocument()
+    expect(screen.getByText(/Безопасность начинается с знаний/i)).toBeInTheDocument()
+    expect(screen.getByText(/2 из 6/i)).toBeInTheDocument()
+    expect(screen.getByText(/Видеоурок/i)).toBeInTheDocument()
+    expect(screen.getByText(/Материалы для изучения/i)).toBeInTheDocument()
+  })
+
+  it("filters events by type from analytics and shows return button", async () => {
+    await act(async () => {
+      render(<App />)
+    })
+
+    const nav = screen.getByRole("navigation", { name: "Основная навигация" })
+    await act(async () => {
+      fireEvent.click(within(nav).getByRole("button", { name: "Аналитика" }))
+    })
+
+    // Click on type stat button
+    const typeBtn = screen.getByRole("button", { name: /Действия сотрудников/i })
+    await act(async () => {
+      fireEvent.click(typeBtn)
+    })
+
+    expect(screen.getByRole("heading", { level: 1, name: "Журнал событий" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Вернуться к аналитике/i })).toBeInTheDocument()
+
+    // Click back to analytics
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Вернуться к аналитике/i }))
+    })
+
+    expect(screen.getByRole("heading", { level: 1, name: "Аналитика безопасности" })).toBeInTheDocument()
+  })
 })

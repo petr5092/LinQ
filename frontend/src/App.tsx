@@ -5,21 +5,22 @@ import {
   ArrowDownToLine,
   ArrowRight,
   Bell,
-  BellRing,
+  BookOpen,
   CalendarDays,
   Camera as CameraIcon,
   Check,
-  CheckCheck,
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
   CircleCheck,
-  CircleHelp,
+  ClipboardCheck,
   Clock3,
-  Copy,
   DoorOpen,
+  Download,
   Factory,
   Fence,
+  FileText,
+  GraduationCap,
   HardHat,
   LayoutDashboard,
   LayoutGrid,
@@ -31,24 +32,22 @@ import {
   Pause,
   Phone,
   Play,
-  Plus,
-  Radio,
   Search,
+  Send,
   Settings2,
   ShieldCheck,
   ShieldX,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   TriangleAlert,
   UserRound,
+  Users,
   Video,
   Volume2,
   VolumeX,
   Warehouse,
   X,
-  Send,
-  Trash2,
-  Users,
 } from 'lucide-react'
 import { FacilityMap } from './components/facility-map'
 import { Button } from '@/components/ui/button'
@@ -77,6 +76,7 @@ const navItems = [
   { key: 'zones', label: 'Зоны и правила', icon: Map },
   { key: 'access', label: 'Контроль доступа', icon: DoorOpen },
   { key: 'analytics', label: 'Аналитика', icon: Activity },
+  { key: 'training', label: 'Обучение', icon: GraduationCap },
 ]
 const pageTitles: Record<string, string> = {
   overview: 'Обзор безопасности',
@@ -85,6 +85,7 @@ const pageTitles: Record<string, string> = {
   zones: 'Зоны и правила',
   access: 'Контроль доступа',
   analytics: 'Аналитика безопасности',
+  training: 'Обучение',
   settings: 'Настройки сервиса',
 }
 const pageDescriptions: Record<string, string> = {
@@ -94,6 +95,7 @@ const pageDescriptions: Record<string, string> = {
   zones: 'Сценарии контроля для каждого участка предприятия.',
   access: 'Проверка СИЗ и допусков сотрудников перед проходом.',
   analytics: 'Нарушения, реакция и динамика безопасности.',
+  training: 'Обучающие курсы, инструкции и материалы по безопасности для персонала.',
   settings: 'Параметры оповещений и демонстрационной системы.',
 }
 function isOpen(e: SafetyEvent) {
@@ -163,6 +165,10 @@ function CameraView({
   useMjpeg = false,
   mjpegUrl,
   latestSnapshotUrl,
+  zoom = 1,
+  onZoomIn,
+  onZoomOut,
+  onZoomReset,
 }: {
   camera?: Camera
   event?: SafetyEvent
@@ -176,6 +182,10 @@ function CameraView({
   useMjpeg?: boolean
   mjpegUrl?: string
   latestSnapshotUrl?: string
+  zoom?: number
+  onZoomIn?: () => void
+  onZoomOut?: () => void
+  onZoomReset?: () => void
 }) {
   const active = event && isOpen(event)
   const fallbackVideo = cameras.find((c) => c.id === event?.camera)?.video
@@ -185,23 +195,13 @@ function CameraView({
   const bgUrl = resolveMediaImage(image)
   const snapshotImage = latestSnapshotUrl || bgUrl
 
-  // State for real-time tracking box movement when in live mode
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    if (!showVideo || !showBoxes || useMjpeg) return
-    const interval = setInterval(() => {
-      setTick((t) => (t + 1) % 100)
-    }, 140)
-    return () => clearInterval(interval)
-  }, [showVideo, showBoxes, useMjpeg])
-
-  const shiftX = Math.sin(tick * 0.12) * 1.6
-  const shiftY = Math.cos(tick * 0.12) * 1.1
-
   return (
     <div
       className={`camera-view ${large ? 'large' : ''} ${online ? '' : 'offline'}`}
-      style={{ backgroundImage: `url(${snapshotImage})` }}
+      style={{
+        backgroundImage: `url(${snapshotImage})`,
+        backgroundSize: large && zoom > 1 ? `${zoom * 100}%` : undefined,
+      }}
     >
       {showVideo ? (
         useMjpeg && mjpegUrl ? (
@@ -220,121 +220,40 @@ function CameraView({
             loop
             muted
             playsInline
-            preload="auto"
           />
         )
       ) : null}
-
-      {mode === 'snapshot' && latestSnapshotUrl ? (
-        <img
-          className="camera-snapshot-img"
-          src={latestSnapshotUrl}
-          alt="Последний скриншот LinQ TPU / ONNX Stream"
-        />
-      ) : null}
-
       <div className="camera-tint" />
-
-      {/* Top overlay badges */}
       <div className="camera-overlay-top">
-        {mode === 'snapshot' ? (
-          <span className="live-label snapshot" title="На главном экране зафиксирован последний скриншот">
-            <i /> ПОСЛЕДНИЙ СКРИН
-          </span>
-        ) : (
-          <span className={`live-label ${online ? '' : 'stopped'}`}>
-            <i /> {online ? 'LIVE 30 FPS' : 'НЕТ СИГНАЛА'}
-          </span>
-        )}
-        <span className="camera-timestamp">
-          23.10.2026 {event?.time ?? '14:32:08'} {mode === 'snapshot' ? '· СТОП-КАДР' : ''}
+        <span className={`live-label ${online ? '' : 'stopped'}`}>
+          <i />
+          {online ? (showVideo ? (useMjpeg ? 'LINQ TPU LIVE' : 'LIVE ПОТОК') : (mode === 'snapshot' ? 'ПОСЛЕДНИЙ СКРИН' : 'LIVE')) : 'НЕТ СИГНАЛА'}
         </span>
+        <span className="camera-timestamp">23.10.2026 {event?.time ?? '14:32:10'}</span>
       </div>
-
-      {/* Real-time neural network detection overlays */}
-      {showBoxes && online && !latestSnapshotUrl && (
-        <>
-          {mode === 'snapshot' && active ? (
-            <div
-              className={`detect-box ${event.severity}`}
-              style={{
-                left: `${event.box[0]}%`,
-                top: `${event.box[1]}%`,
-                width: `${event.box[2]}%`,
-                height: `${event.box[3]}%`,
-              }}
-            >
-              <span>{event.type === 'environment' ? 'Объект' : event.type === 'access' ? 'Контроль доступа' : event.title} · 98%</span>
-              <b className="box-corner tl" />
-              <b className="box-corner tr" />
-              <b className="box-corner bl" />
-              <b className="box-corner br" />
-            </div>
-          ) : null}
-
-          {mode === 'live' && !useMjpeg ? (
-            <div className="camera-neural-overlay">
-              {/* Box 1: Compliant worker with helmet */}
-              <div
-                className="neural-box compliant"
-                style={{
-                  left: `${28 + shiftX}%`,
-                  top: `${34 + shiftY}%`,
-                  width: '14%',
-                  height: '46%',
-                }}
-              >
-                <span className="neural-tag compliant">
-                  <Check size={11} /> Монтажник #01 · Каска 96%
-                </span>
-                <b className="box-corner tl" />
-                <b className="box-corner tr" />
-                <b className="box-corner bl" />
-                <b className="box-corner br" />
-              </div>
-
-              {/* Box 2: Violation worker without helmet */}
-              <div
-                className="neural-box violation"
-                style={{
-                  left: `${52 - shiftX * 0.8}%`,
-                  top: `${32 - shiftY * 0.5}%`,
-                  width: '15%',
-                  height: '52%',
-                }}
-              >
-                <span className="neural-tag violation">
-                  <TriangleAlert size={11} /> ВНИМАНИЕ: БЕЗ КАСКИ! (98%)
-                </span>
-                <b className="box-corner tl" />
-                <b className="box-corner tr" />
-                <b className="box-corner bl" />
-                <b className="box-corner br" />
-              </div>
-
-              {/* Box 3: Machinery in background */}
-              <div
-                className="neural-box machinery"
-                style={{
-                  left: '12%',
-                  top: '22%',
-                  width: '18%',
-                  height: '32%',
-                }}
-              >
-                <span className="neural-tag machinery">
-                  <Factory size={11} /> Оборудование (92%)
-                </span>
-                <b className="box-corner tl" />
-                <b className="box-corner tr" />
-                <b className="box-corner bl" />
-                <b className="box-corner br" />
-              </div>
-            </div>
-          ) : null}
-        </>
-      )}
-
+      {active && online && showBoxes ? (
+        <div
+          className={`detect-box ${event.severity}`}
+          style={{
+            left: `${event.box[0]}%`,
+            top: `${event.box[1]}%`,
+            width: `${event.box[2]}%`,
+            height: `${event.box[3]}%`,
+          }}
+        >
+          <span>
+            {event.type === 'environment'
+              ? 'Объект'
+              : event.type === 'access'
+                ? 'Контроль доступа'
+                : event.title} · 98%
+          </span>
+          <b className="box-corner tl" />
+          <b className="box-corner tr" />
+          <b className="box-corner bl" />
+          <b className="box-corner br" />
+        </div>
+      ) : null}
       {!online ? (
         <div className="offline-content">
           <Video size={25} />
@@ -342,36 +261,52 @@ function CameraView({
           <span>Последний сигнал в 14:21</span>
         </div>
       ) : null}
-
-      {mode === 'live' && large ? (
-        <div className="neural-hud-bar">
-          <div className="neural-hud-stats">
-            <span className="neural-hud-stat">
-              <Sparkles size={13} style={{ color: '#34d399' }} /> LinQ Neural Guard · YOLOv8n PPE
-            </span>
-            <span className="neural-hud-stat">
-              <Activity size={13} style={{ color: '#38bdf8' }} /> 14.8 мс (30 FPS)
-            </span>
-            <span className="neural-hud-stat alert">
-              <TriangleAlert size={13} /> 1 нарушение: без каски
-            </span>
-          </div>
-          <span style={{ color: '#94a3b8', fontSize: '10px' }}>
-            {useMjpeg ? 'Поток MJPEG (LinQ TPU/ONNX)' : 'HD Поток + AI Разметка'}
-          </span>
+      <span className="camera-demo">{useMjpeg ? 'LINQ TPU ACCELERATED' : 'ДЕМОНСТРАЦИЯ'}</span>
+      {online ? (
+        <span className="camera-ai">
+          <Sparkles size={10} /> LinQ AI
+        </span>
+      ) : null}
+      {large && onZoomIn && onZoomOut && onZoomReset ? (
+        <div className="camera-zoom-controls" aria-label="Масштаб изображения">
+          <button
+            type="button"
+            aria-label="Уменьшить изображение"
+            title="Уменьшить"
+            disabled={zoom <= 1}
+            onClick={(e) => {
+              e.stopPropagation()
+              onZoomOut()
+            }}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="camera-zoom-value"
+            aria-label="Сбросить масштаб"
+            title="Сбросить масштаб"
+            onClick={(e) => {
+              e.stopPropagation()
+              onZoomReset()
+            }}
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            type="button"
+            aria-label="Увеличить изображение"
+            title="Увеличить"
+            disabled={zoom >= 2.5}
+            onClick={(e) => {
+              e.stopPropagation()
+              onZoomIn()
+            }}
+          >
+            +
+          </button>
         </div>
-      ) : (
-        <>
-          <span className="camera-demo">
-            {mode === 'snapshot' ? 'ПОСЛЕДНИЙ СКРИНШОТ' : videoSrc ? 'ВИДЕОПОТОК 30 FPS' : 'ДЕМОНСТРАЦИЯ'}
-          </span>
-          {online ? (
-            <span className="camera-ai">
-              <Sparkles size={10} /> LinQ AI
-            </span>
-          ) : null}
-        </>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -413,6 +348,7 @@ function readEvents() {
   }
   return initialEvents
 }
+
 export default function App() {
   const [page, setPage] = useState('overview')
   const [events, setEvents] = useState<SafetyEvent[]>(readEvents)
@@ -422,25 +358,81 @@ export default function App() {
   const [zone, setZone] = useState('all')
   const [siteId, setSiteId] = useState<SiteId>('north')
   const [workshop, setWorkshop] = useState('all')
-  const [accountId, setAccountId] = useState('dispatcher')
+  const [accountId, setAccountId] = useState(accounts[0].id)
   const [search, setSearch] = useState('')
   const [severity, setSeverity] = useState('all')
   const [status, setStatus] = useState('all')
+  const [eventTypeFilter, setEventTypeFilter] = useState('all')
+  const [eventsReturnPage, setEventsReturnPage] = useState<string | null>(null)
   const [period, setPeriod] = useState('today')
   const [view, setView] = useState('grid')
   const [overviewTab, setOverviewTab] = useState<'snapshot' | 'cameras' | 'map'>('snapshot')
   const [snapshotTimestamp, setSnapshotTimestamp] = useState<number>(() => Date.now())
   const [feedTab, setFeedTab] = useState('all')
-  const [feedUnread, setFeedUnread] = useState(true)
+  const feedUnread = true
   const [seen, setSeen] = useState<string[]>([])
   const [sound, setSound] = useState(false)
+  const [railHidden, setRailHidden] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [modal, setModal] = useState<'help' | 'demo' | null>(null)
   const [toast, setToast] = useState('')
   const [showBoxes, setShowBoxes] = useState(true)
   const [notifyStatus, setNotifyStatus] = useState<any>(null)
   const [testSending, setTestSending] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const [cameraZoom, setCameraZoom] = useState(1)
+  const [rulesEnabled, setRulesEnabled] = useState<Record<string, boolean>>({})
+  const [customizerOpen, setCustomizerOpen] = useState(false)
+  const [customZones, setCustomZones] = useState<string[]>([])
+  const [customRules, setCustomRules] = useState<Record<string, string[]>>({})
+  const [customZoneDraft, setCustomZoneDraft] = useState('')
+  const [customRuleDraft, setCustomRuleDraft] = useState('')
+  const [customRuleZone, setCustomRuleZone] = useState('')
+  const [zoneLabels, setZoneLabels] = useState<Record<string, string>>({})
+  const [ruleLabels, setRuleLabels] = useState<Record<string, string>>({})
+  const [customizerDirty, setCustomizerDirty] = useState(false)
+  const [trainingVideoPlaying, setTrainingVideoPlaying] = useState(false)
+  const [trainingQuizOpen, setTrainingQuizOpen] = useState(false)
+  const [trainingQuizAnswer, setTrainingQuizAnswer] = useState<string | null>(null)
+  const [trainingQuizDone, setTrainingQuizDone] = useState(false)
+  const [trainingCustomizeOpen, setTrainingCustomizeOpen] = useState(false)
+  const [trainingTitle, setTrainingTitle] = useState('Основы безопасности')
+  const [trainingTitleDraft, setTrainingTitleDraft] = useState('Основы безопасности')
 
+  const activeSite = sites.find((site) => site.id === siteId) ?? sites[0]
+  const activeAccount = accounts.find((account) => account.id === accountId) ?? accounts[0]
+  const canCustomizeZones = !['employee', 'video-operator', 'shift-leader'].includes(accountId)
+  const canAccessControl = accountId !== 'employee'
+  const canCustomizeTraining = ['safety-specialist', 'safety-inspector'].includes(accountId)
+  const siteCameras = cameras.filter((camera) => camera.site === siteId)
+  const siteEvents = events.filter((event) => event.site === siteId)
+  const siteZones = activeSite.workshops.flatMap((group) => group.zones)
+  const allZones = [...siteZones, ...customZones]
+  const workshopZones = activeSite.workshops
+    .filter((group) => workshop === 'all' || group.name === workshop)
+    .flatMap((group) => group.zones)
+  const offlineCount = siteCameras.filter((camera) => !camera.online).length
+  const selected = events.find((e) => e.id === selectedId)
+  const openEvents = siteEvents.filter(isOpen)
+  const criticalCount = openEvents.filter((e) => e.severity === 'critical').length
+  const lightCount = openEvents.filter((e) => e.severity === 'info').length
+  const notify = (message: string) => setToast(message)
+
+  const openTypeEvents = (type: SafetyEvent['type']) => {
+    navigate('events')
+    setEventTypeFilter(type)
+    setEventsReturnPage('analytics')
+  }
+
+  // Periodic polling for frame updates and status
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSnapshotTimestamp(Date.now())
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Load telegram notification status
   useEffect(() => {
     if (page === 'settings') {
       api.getNotificationsStatus().then((res) => {
@@ -454,17 +446,17 @@ export default function App() {
     const ok = await api.sendTestNotification(subscriberId)
     setTestSending(false)
     if (ok) {
-      notify('Тестовое уведомление отправлено!')
+      notify('Тестовое оповещение успешно отправлено в Telegram!')
       api.getNotificationsStatus().then(setNotifyStatus)
     } else {
-      notify('Ошибка отправки. Проверьте статус бота.')
+      notify('Не удалось отправить тестовое сообщение. Проверьте статус бота.')
     }
   }
 
   const handleUpdateSubscriber = async (subId: number, min_severity: string) => {
     const ok = await api.updateSubscriber(subId, { min_severity })
     if (ok) {
-      notify('Порог фильтрации обновлен.')
+      notify('Настройки подписчика обновлены.')
       api.getNotificationsStatus().then(setNotifyStatus)
     }
   }
@@ -472,30 +464,17 @@ export default function App() {
   const handleDeleteSubscriber = async (subId: number) => {
     const ok = await api.updateSubscriber(subId, { delete: true })
     if (ok) {
-      notify('Подписчик удален.')
+      notify('Подписчик удалён.')
       api.getNotificationsStatus().then(setNotifyStatus)
     }
   }
-  const [playing, setPlaying] = useState(false)
-  const [rulesEnabled, setRulesEnabled] = useState<Record<string, boolean>>({})
-  const activeSite = sites.find((site) => site.id === siteId) ?? sites[0]
-  const activeAccount = accounts.find((account) => account.id === accountId) ?? accounts[0]
-  const siteCameras = cameras.filter((camera) => camera.site === siteId)
-  const siteEvents = events.filter((event) => event.site === siteId)
-  const siteZones = activeSite.workshops.flatMap((group) => group.zones)
-  const workshopZones = activeSite.workshops
-    .filter((group) => workshop === 'all' || group.name === workshop)
-    .flatMap((group) => group.zones)
-  const offlineCount = siteCameras.filter((camera) => !camera.online).length
-  const selected = events.find((e) => e.id === selectedId)
-  const openEvents = siteEvents.filter(isOpen)
-  const criticalCount = openEvents.filter((e) => e.severity === 'critical').length
-  const notify = (message: string) => setToast(message)
+
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(''), 4200)
     return () => clearTimeout(t)
   }, [toast])
+
   useEffect(() => {
     try {
       localStorage.setItem('tuk-tuk-events-v1', JSON.stringify(events.map(({ id, status }) => ({ id, status }))))
@@ -503,9 +482,15 @@ export default function App() {
       /* Session state remains usable. */
     }
   }, [events])
+
   useEffect(() => {
     document.title = `Тук-Тук · ${pageTitles[page]}`
   }, [page])
+
+  useEffect(() => {
+    setCameraZoom(1)
+  }, [selectedId])
+
   useEffect(() => {
     let isMounted = true
     api.getIncidents().then((backendEvents) => {
@@ -533,17 +518,24 @@ export default function App() {
       unsubscribe()
     }
   }, [])
+
   const updateStatus = (id: string, value: EventStatus) => {
+    const current = events.find((event) => event.id === id)
+    if (!current || (value === 'working' && current.status !== 'new') || (value === 'resolved' && current.status !== 'working')) return
     setEvents((list) => list.map((e) => (e.id === id ? { ...e, status: value } : e)))
-    api.updateStatus(id, value)
+    if (value === 'resolved') {
+      setSeen((curr) => (curr.includes(id) ? curr : [...curr, id]))
+    }
+    api.updateStatus(id, value).catch(() => {})
     notify(
       value === 'working'
         ? 'Событие взято в работу. Ответственный назначен.'
         : value === 'resolved'
           ? 'Нарушение отмечено как устранённое.'
-          : 'Событие помечено как ложное срабатывание.'
+          : 'Событие отмечено как ложное срабатывание. LinQ AI учтёт этот пример.'
     )
   }
+
   const navigate = (key: string) => {
     window.scrollTo({ top: 0, behavior: 'instant' })
     setPage(key)
@@ -551,9 +543,12 @@ export default function App() {
     setSearch('')
     setSeverity('all')
     setStatus('all')
+    setEventTypeFilter('all')
     setPeriod('today')
     setWorkshop('all')
+    if (key !== 'events') setEventsReturnPage(null)
   }
+
   const switchSite = (id: SiteId) => {
     if (id === siteId) return
     setSiteId(id)
@@ -566,18 +561,36 @@ export default function App() {
     const next = sites.find((site) => site.id === id)
     if (next) notify(`Площадка: ${next.name}`)
   }
+
   const switchAccount = (id: string) => {
     if (id === accountId) return
     setAccountId(id)
+    if (id === 'employee' && page === 'access') navigate('overview')
+    if (['employee', 'video-operator', 'shift-leader'].includes(id)) setCustomizerOpen(false)
+    if (!['safety-specialist', 'safety-inspector'].includes(id)) setTrainingCustomizeOpen(false)
     const next = accounts.find((account) => account.id === id)
     if (next) notify(`Аккаунт: ${next.role} · ${next.name}`)
   }
+
+  const downloadTrainingHandout = () => {
+    const content = `ТУК-ТУК · ПАМЯТКА ПО БЕЗОПАСНОСТИ\n\n1. Используйте каску и средства защиты органов дыхания.\n2. Не проходите под подвешенным грузом.\n3. Держите проходы свободными.\n4. Сообщайте оператору видеонаблюдения о нарушениях.`
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'tuk-tuk-pamyatka-po-bezopasnosti.txt'
+    link.click()
+    URL.revokeObjectURL(url)
+    notify('Памятка скачана.')
+  }
+
   const dateMatch = (e: SafetyEvent) => (period === 'last-hour' ? e.time >= '14:00:00' : true)
   const filteredEvents = siteEvents.filter(
     (e) =>
       (zone === 'all' || e.zone === zone) &&
       (severity === 'all' || e.severity === severity) &&
       (status === 'all' || (status === 'open' ? isOpen(e) : e.status === status)) &&
+      (eventTypeFilter === 'all' || e.type === eventTypeFilter) &&
       dateMatch(e) &&
       `${e.title} ${e.id} ${e.camera} ${e.employee?.name ?? ''}`.toLowerCase().includes(search.toLowerCase())
   )
@@ -587,7 +600,12 @@ export default function App() {
       (workshop === 'all' || c.workshop === workshop) &&
       `${c.name} ${c.id} ${c.zone} ${c.workshop}`.toLowerCase().includes(search.toLowerCase())
   )
-  const visibleCameras = page === 'cameras' ? filteredCameras : filteredCameras.slice(0, 6)
+  const prioritizedCameras = [...filteredCameras].sort((a, b) => {
+    const aHasViolation = Boolean(a.event && events.some((event) => event.id === a.event && isOpen(event)))
+    const bHasViolation = Boolean(b.event && events.some((event) => event.id === b.event && isOpen(event)))
+    return Number(bHasViolation) - Number(aHasViolation)
+  })
+  const visibleCameras = page === 'cameras' ? prioritizedCameras : prioritizedCameras.slice(0, 6)
   const feedEvents = siteEvents.filter(
     (e) => (feedTab === 'critical' ? e.severity === 'critical' : true) && (feedUnread ? !seen.includes(e.id) : true)
   )
@@ -601,26 +619,37 @@ export default function App() {
     }))
   const exportCSV = () => {
     const fields = [
-      ['ID', 'Время', 'Зона', 'Камера', 'Событие', 'Важность', 'Статус', 'Сотрудник'],
-      ...filteredEvents.map((e) => [
-        e.id,
-        e.time,
-        e.zone,
-        e.camera,
-        e.title,
-        e.severity,
-        statusLabels[e.status],
-        e.employee?.name ?? 'Не определён',
-      ]),
+      'ID',
+      'Площадка',
+      'Зона',
+      'Камера',
+      'Время',
+      'Событие',
+      'Важность',
+      'Статус',
+      'Сотрудник',
+      'Табельный номер',
     ]
-    const blob = new Blob(['\ufeff' + fields.map((row) => row.map((s) => '"' + s.replaceAll('"', '""') + '"').join(';')).join('\n')], {
-      type: 'text/csv;charset=utf-8;',
-    })
+    const rows = filteredEvents.map((e) => [
+      e.id,
+      sites.find((s) => s.id === e.site)?.name ?? e.site,
+      e.zone,
+      e.camera,
+      e.time,
+      `"${e.title.replace(/"/g, '""')}"`,
+      e.severity === 'critical' ? 'Критическое' : e.severity === 'warning' ? 'Внимание' : 'Информация',
+      statusLabels[e.status],
+      `"${(e.employee?.name ?? '—').replace(/"/g, '""')}"`,
+      e.employee?.number ?? '—',
+    ])
+    const csv = [fields.join(';'), ...rows.map((r) => r.join(';'))].join('\r\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = 'tuk-tuk-events-2026-10-23.csv'
+    a.href = url
+    a.download = `safety-events-${siteId}-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
-    URL.revokeObjectURL(a.href)
+    URL.revokeObjectURL(url)
     notify('Журнал событий выгружен в CSV.')
   }
   const stats = (
@@ -638,6 +667,7 @@ export default function App() {
         <div className="stat-value">
           {openEvents.length}
           <span className="stat-value-tag red">{criticalCount} критических</span>
+          <span className="stat-value-tag yellow">{lightCount} лёгких</span>
         </div>
         <div className="stat-note">За текущую смену</div>
         <StatSpark color="orange" />
@@ -695,34 +725,22 @@ export default function App() {
       <select aria-label="Фильтр по зоне" value={zone} onChange={(e) => setZone(e.target.value)}>
         <option value="all">Все зоны</option>
         {workshopZones.map((z) => (
-          <option key={z}>{z}</option>
+          <option value={z} key={z}>
+            {zoneLabels[z] ?? z}
+          </option>
         ))}
       </select>
-      <ChevronDown size={13} />
+      <ChevronDown size={12} />
     </label>
   )
   const workshopFilter = (
     <label className="select-wrap">
-      <Factory size={14} />
-      <select
-        aria-label="Фильтр по цеху"
-        value={workshop}
-        onChange={(e) => {
-          const next = e.target.value
-          setWorkshop(next)
-          if (
-            zone !== 'all' &&
-            next !== 'all' &&
-            !activeSite.workshops.some((group) => group.name === next && group.zones.includes(zone))
-          ) {
-            setZone('all')
-          }
-        }}
-      >
-        <option value="all">Все цеха</option>
-        {activeSite.workshops.map((group) => (
-          <option key={group.name} value={group.name}>
-            {group.name}
+      <Factory size={15} />
+      <select aria-label="Корпус или участок" value={workshop} onChange={(e) => setWorkshop(e.target.value)}>
+        <option value="all">Все корпуса</option>
+        {activeSite.workshops.map((w) => (
+          <option value={w.name} key={w.name}>
+            {w.name}
           </option>
         ))}
       </select>
@@ -730,10 +748,9 @@ export default function App() {
     </label>
   )
   const searchInput = (
-    <label className="search-input">
+    <label className="search-wrap">
       <Search size={15} />
       <input
-        aria-label="Поиск"
         placeholder={page === 'events' ? 'Событие, сотрудник или ID' : 'Найти камеру'}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -770,6 +787,7 @@ export default function App() {
             className={`icon-button ${showBoxes ? 'selected' : ''}`}
             title="Показать или скрыть детекции"
             aria-label="Показать или скрыть детекции"
+            data-tooltip="Показать или скрыть детекции"
             aria-pressed={showBoxes}
             onClick={() => setShowBoxes((v) => !v)}
           >
@@ -872,69 +890,80 @@ export default function App() {
         <thead>
           <tr>
             <th>Событие</th>
-            <th>Зона / камера</th>
-            <th>
-              Время <ChevronDown size={11} />
-            </th>
+            <th>Участок</th>
+            <th>Камера</th>
+            <th>Время</th>
+            <th>Важность</th>
+            <th>Сотрудник</th>
             <th>Статус</th>
-            <th />
+            <th aria-label="Действие" />
           </tr>
         </thead>
         <tbody>
           {list.map((e) => (
-            <tr key={e.id} onClick={() => setSelectedId(e.id)}>
+            <tr
+              key={e.id}
+              className={selectedId === e.id ? 'active' : ''}
+              onClick={() => setSelectedId(e.id)}
+              style={{ cursor: 'pointer' }}
+            >
               <td>
-                <button className="event-table-name" onClick={() => setSelectedId(e.id)}>
+                <div className="event-primary">
                   <EventIcon event={e} />
-                  <span>
+                  <div>
                     <strong>{e.title}</strong>
-                    <span>
-                      {e.employee?.name ?? (e.type === 'environment' ? 'Объект среды' : 'Личность не определена')}
-                      <small> · {e.id}</small>
-                    </span>
-                  </span>
-                </button>
+                    <span>ID: {e.id}</span>
+                  </div>
+                </div>
               </td>
               <td>
                 <span>{e.zone}</span>
-                <small>{e.camera}</small>
               </td>
               <td>
-                <span>{e.time}</span>
-                <small>23 октября</small>
+                <span className="camera-tag">{e.camera}</span>
+              </td>
+              <td>
+                <time>{e.time}</time>
+              </td>
+              <td>
+                <SeverityBadge severity={e.severity} short={compact} />
+              </td>
+              <td>
+                <span className="employee-text">{e.employee?.name ?? '—'}</span>
               </td>
               <td>
                 <StatusBadge status={e.status} />
               </td>
-              <td>
-                <ChevronRight size={15} />
+              <td onClick={(ev) => ev.stopPropagation()}>
+                <button
+                  className="icon-button"
+                  aria-label={`Открыть событие ${e.id}`}
+                  onClick={() => setSelectedId(e.id)}
+                >
+                  <ArrowRight size={16} />
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {list.length === 0 ? <Empty text="Событий по этим параметрам нет" /> : null}
-      {!compact ? (
-        <div className="table-footer">
-          Показано {list.length} из {siteEvents.length} событий <span>23 октября 2026 · текущая смена</span>
-        </div>
-      ) : null}
+      {list.length === 0 ? <Empty text="События не найдены" /> : null}
     </div>
   )
   const map = (
     <FacilityMap
       site={activeSite}
       events={siteEvents}
-      onEvent={(id) => setSelectedId(id)}
-      onAttention={(cameraIds) => {
+      onEvent={(id: string) => setSelectedId(id)}
+      onAttention={(cameraIds: string[]) => {
         navigate('cameras')
         setSearch(cameraIds[0] ?? '')
       }}
-      onCameras={(selectedZone) => {
+      onCameras={(selectedZone: string) => {
         navigate('cameras')
         setZone(selectedZone || 'all')
       }}
-      renderCamera={(camera, event) => (
+      renderCamera={(camera: Camera, event?: SafetyEvent) => (
         <CameraView
           camera={camera}
           event={event}
@@ -947,7 +976,7 @@ export default function App() {
       )}
     />
   )
-    const latestCam = siteCameras.find((c) => c.id === 'CAM-01') || siteCameras[0]
+  const latestCam = siteCameras.find((c) => c.id === 'CAM-01') || siteCameras[0]
   const latestIncident = siteEvents.find((e) => e.camera === latestCam?.id) || siteEvents.find(isOpen) || siteEvents[0]
 
   const latestSnapshotHero = (
@@ -1013,17 +1042,8 @@ export default function App() {
               if (latestCam) setInspectedCamera(latestCam)
             }}
           >
-            <Play size={15} /> Войти в камеру · Прямой эфир 30 FPS
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSnapshotTimestamp(Date.now())
-              notify('Свежий стоп-кадр из LinQ TPU / ONNX Stream зафиксирован.')
-            }}
-          >
-            <CameraIcon size={14} /> Обновить скрин из LinQ TPU
+            <Play size={14} style={{ fill: 'currentColor', marginRight: 6 }} />
+            Открыть прямой эфир (MJPEG)
           </Button>
           {latestIncident && (
             <Button
@@ -1031,7 +1051,8 @@ export default function App() {
               size="sm"
               onClick={() => setSelectedId(latestIncident.id)}
             >
-              Инцидент {latestIncident.id}
+              <TriangleAlert size={14} style={{ marginRight: 6 }} />
+              Детали инцидента ({latestIncident.id})
             </Button>
           )}
         </div>
@@ -1040,128 +1061,171 @@ export default function App() {
   )
 
   return (
-    <div className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''}`}>
+    <div className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''} ${railHidden ? 'rail-hidden' : ''}`}>
       <aside className="sidebar">
         <div className="brand-row">
-          <a
-            className="brand"
-            href="#overview"
-            onClick={(e) => {
-              e.preventDefault()
-              navigate('overview')
-            }}
-          >
-            <span>
-              Тук-Тук<span className="brand-dot">.</span>
-            </span>
-            {isLiveBackend && (
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 rounded px-1.5 py-0.5 font-medium ml-2 self-center" title="Подключено к LinQ REST API и WebSocket">
-                API Live
-              </span>
-            )}
-          </a>
+          <div className="brand">
+            <img src="/logo.svg" alt="Тук-Тук логотип" />
+            Тук-Тук<span className="brand-dot">.</span>
+          </div>
           <button
             className="sidebar-toggle"
             aria-label={collapsed ? 'Развернуть меню' : 'Свернуть меню'}
             onClick={() => setCollapsed((v) => !v)}
           >
-            <Menu size={16} />
+            <Menu size={18} />
           </button>
         </div>
         <label className="facility-select">
           <span className="facility-symbol">
-            <Factory size={17} />
+            <Factory size={18} />
           </span>
           <div>
             <strong>{activeSite.name}</strong>
             <span>{activeSite.subtitle}</span>
           </div>
-          <ChevronsUpDown size={13} />
-          <select aria-label="Выбор площадки" value={siteId} onChange={(e) => switchSite(e.target.value as SiteId)}>
+          <ChevronsUpDown size={15} />
+          <select
+            aria-label="Выбор площадки"
+            value={siteId}
+            onChange={(e) => switchSite(e.target.value as SiteId)}
+          >
             {sites.map((site) => (
-              <option key={site.id} value={site.id}>
-                {site.name} · {site.subtitle}
+              <option value={site.id} key={site.id}>
+                {site.name} — {site.subtitle}
               </option>
             ))}
           </select>
         </label>
         <div className="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</div>
         <nav aria-label="Основная навигация">
-          {navItems.map(({ key, label, icon: Icon }) => (
-            <button key={key} onClick={() => navigate(key)} className={`nav-item ${page === key ? 'active' : ''}`} title={label}>
+          {navItems.filter(({ key }) => key !== 'access' || canAccessControl).map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => navigate(key)}
+              className={`nav-item ${page === key ? 'active' : ''}`}
+              title={label}
+            >
               <Icon size={18} />
               <span>{label}</span>
-              {key === 'events' ? <b>{openEvents.length}</b> : null}
+              {key === 'events' ? <b className="events-count">{openEvents.length}</b> : null}
               {key === 'cameras' ? <small>{siteCameras.length}</small> : null}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <button className={`nav-item ${page === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')}>
+          <div className="linq-card">
+            <div>
+              <span className="linq-logo">
+                LinQ<span>TPU</span>
+              </span>
+              <span className="linq-status">
+                <i /> В сети
+              </span>
+            </div>
+            <p>YOLOv8n-pose · инференс на плате</p>
+            <div className="linq-meta">
+              <span>H1M · 24.2 FPS</span>
+              <span>·</span>
+              <span>Задержка 41мс</span>
+            </div>
+          </div>
+          <button
+            className={`nav-item ${page === 'settings' ? 'active' : ''}`}
+            onClick={() => navigate('settings')}
+            title="Настройки сервиса"
+          >
             <Settings2 size={18} />
             <span>Настройки</span>
           </button>
-          <button className="nav-item" onClick={() => setModal('help')}>
-            <CircleHelp size={18} />
-            <span>Помощь и поддержка</span>
-            <ArrowRight size={14} />
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="profile" aria-label="Переключить аккаунт">
-                <div className="avatar">{activeAccount.initials}</div>
-                <div>
-                  <strong>{activeAccount.name}</strong>
-                  <span>{activeAccount.role}</span>
-                </div>
-                <ChevronsUpDown size={13} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="start" sideOffset={8} className="account-menu">
-              {accounts.map((account) => (
-                <DropdownMenuItem key={account.id} className="account-item" onSelect={() => switchAccount(account.id)}>
-                  <span className="avatar">{account.initials}</span>
-                  <span className="account-text">
-                    <strong>{account.role}</strong>
-                    <small>
-                      {account.name} · {account.note}
-                    </small>
-                  </span>
-                  {account.id === accountId ? <Check size={14} /> : null}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="profile">
+            <span className="avatar">{activeAccount.initials}</span>
+            <div>
+              <strong>{activeAccount.name}</strong>
+              <span>{activeAccount.role}</span>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="icon-button" aria-label="Сменить пользователя">
+                  <UserRound size={16} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {accounts.map((account) => (
+                  <DropdownMenuItem key={account.id} onClick={() => switchAccount(account.id)}>
+                    <div>
+                      <strong>{account.role}</strong>
+                      <div className="text-muted-foreground" style={{ fontSize: 11 }}>
+                        {account.name} · {account.note}
+                      </div>
+                    </div>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </aside>
+
       <main className="workspace">
-        <div className="breadcrumbs">
+        <header className="breadcrumbs">
           <Factory size={13} />
           <span>{activeSite.subtitle}</span>
-          <ChevronRight size={12} />
+          <ChevronRight size={13} />
           <span className="current">{pageTitles[page]}</span>
-        </div>
+
+          {isLiveBackend && (
+            <span
+              style={{
+                marginLeft: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                background: '#ecfdf5',
+                color: '#059669',
+                padding: '2px 8px',
+                borderRadius: 99,
+                fontSize: 10,
+                fontWeight: 600,
+                border: '1px solid #a7f3d0',
+              }}
+              title="Подключено к LinQ REST API и WebSocket в реальном времени"
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+              API LIVE
+            </span>
+          )}
+
+          <span className="prototype-label">ПРОТОТИП v0.9</span>
+        </header>
+
         <div className="page-heading">
           <div>
             <h1>{pageTitles[page]}</h1>
             <p>{pageDescriptions[page]}</p>
           </div>
           <div className="page-actions">
-            <label className="date-select">
-              <CalendarDays size={15} />
-              <select aria-label="Период" value={period} onChange={(e) => setPeriod(e.target.value)}>
-                <option value="today">23 октября, сегодня</option>
+            <span className="date-select">
+              <CalendarDays size={14} />
+              <select
+                aria-label="Период отображения"
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+              >
+                <option value="today">Сегодня, 23 октября</option>
                 <option value="last-hour">Последний час</option>
               </select>
-              <ChevronDown size={12} />
-            </label>
-            <Button size="sm" variant="outline" onClick={exportCSV}>
-              <ArrowDownToLine size={14} />
-              <span>Экспорт</span>
-            </Button>
+            </span>
+            <button className="btn-secondary" onClick={exportCSV} title="Скачать события за выбранную смену в CSV">
+              <ArrowDownToLine size={15} /> Экспорт
+            </button>
+            <button className="btn-primary" onClick={() => setModal('demo')}>
+              <Sparkles size={15} /> Демонстрация
+            </button>
           </div>
         </div>
-        <div className="page-body">
+
+        <div className="page-content">
           {page === 'overview' ? (
             <>
               {stats}
@@ -1215,6 +1279,11 @@ export default function App() {
           {page === 'cameras' ? <>{cameraGrid}</> : null}
           {page === 'events' ? (
             <>
+              {eventsReturnPage === 'analytics' ? (
+                <button className="journal-back" onClick={() => navigate('analytics')}>
+                  <ArrowDownLeft size={14} /> Вернуться к аналитике
+                </button>
+              ) : null}
               <div className="journal-summary">
                 <span className="live-text">
                   <i /> {openEvents.length} событий требуют реакции
@@ -1232,6 +1301,7 @@ export default function App() {
                     <option value="all">Любая важность</option>
                     <option value="critical">Критические</option>
                     <option value="warning">Внимание</option>
+                    <option value="info">Лёгкие</option>
                   </select>
                   <ChevronDown size={12} />
                 </label>
@@ -1259,9 +1329,86 @@ export default function App() {
                   <strong>У каждой зоны — свои правила безопасности</strong>
                   <p>Включайте сценарии для участка. Изменения в прототипе применяются только к настройкам интерфейса.</p>
                 </div>
+                {canCustomizeZones ? (
+                  <button
+                    className="customize-action"
+                    onClick={() => {
+                      if (customizerOpen && customizerDirty) {
+                        setCustomizerDirty(false)
+                        setCustomizerOpen(false)
+                        notify('Изменения предприятия сохранены.')
+                      } else {
+                        setCustomizerOpen((value) => !value)
+                      }
+                    }}
+                  >
+                    {customizerOpen ? (customizerDirty ? 'Сохранить изменения' : 'Скрыть настройку') : 'Настроить предприятие'}
+                  </button>
+                ) : null}
               </div>
+              {customizerOpen ? (
+                <div className="zone-customizer">
+                  <div>
+                    <strong>Адаптация под предприятие</strong>
+                    <p>Добавляйте собственные места и сценарии контроля.</p>
+                  </div>
+                  <div className="customizer-fields">
+                    <label>
+                      <span>Новое место</span>
+                      <input
+                        value={customZoneDraft}
+                        onChange={(e) => setCustomZoneDraft(e.target.value)}
+                        placeholder="Например, Серверная"
+                      />
+                    </label>
+                    <button
+                      onClick={() => {
+                        const value = customZoneDraft.trim()
+                        if (!value || allZones.includes(value)) return
+                        setCustomZones((zones) => [...zones, value])
+                        setCustomizerDirty(true)
+                        setCustomRuleZone(value)
+                        setCustomZoneDraft('')
+                      }}
+                    >
+                      Добавить место
+                    </button>
+                    <label>
+                      <span>Новое нарушение</span>
+                      <input
+                        value={customRuleDraft}
+                        onChange={(e) => setCustomRuleDraft(e.target.value)}
+                        placeholder="Например, Открытая дверь"
+                      />
+                    </label>
+                    <select
+                      aria-label="Место для нового нарушения"
+                      value={customRuleZone || allZones[0] || ''}
+                      onChange={(e) => setCustomRuleZone(e.target.value)}
+                    >
+                      {allZones.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        const value = customRuleDraft.trim()
+                        const target = customRuleZone || allZones[0]
+                        if (!value || !target) return
+                        setCustomRules((rules) => ({ ...rules, [target]: [...(rules[target] ?? []), value] }))
+                        setCustomizerDirty(true)
+                        setCustomRuleDraft('')
+                      }}
+                    >
+                      Добавить нарушение
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <div className="zones-grid">
-                {siteZones.map((z, i) => {
+                {allZones.map((z, i) => {
                   const Icon = zoneIcons[i % zoneIcons.length]
                   const cameraCount = siteCameras.filter((c) => c.zone === z).length
                   const zoneEventCount = openEvents.filter((e) => e.zone === z).length
@@ -1272,9 +1419,26 @@ export default function App() {
                           <Icon size={21} />
                         </span>
                         <div>
-                          <h2>{z}</h2>
+                          <h2>
+                            {zoneLabels[z] ?? z}
+                            {customizerOpen ? (
+                              <button
+                                className="inline-edit"
+                                title="Изменить название места"
+                                onClick={() => {
+                                  const value = window.prompt('Название места', zoneLabels[z] ?? z)?.trim()
+                                  if (value && value !== z) {
+                                    setZoneLabels((labels) => ({ ...labels, [z]: value }))
+                                    setCustomizerDirty(true)
+                                  }
+                                }}
+                              >
+                                изменить
+                              </button>
+                            ) : null}
+                          </h2>
                           <p>
-                            {zoneWorkshop[z]} · {cameraCount} {pluralRu(cameraCount, 'камера', 'камеры', 'камер')} · {zoneEventCount}{' '}
+                            {zoneWorkshop[z] ?? 'Пользовательская зона'} · {cameraCount} {pluralRu(cameraCount, 'камера', 'камеры', 'камер')} · {zoneEventCount}{' '}
                             {pluralRu(zoneEventCount, 'активное событие', 'активных события', 'активных событий')}
                           </p>
                         </div>
@@ -1289,13 +1453,33 @@ export default function App() {
                           <ArrowRight size={16} />
                         </button>
                       </div>
-                      {zoneRules[z].map((rule) => (
+                      {[...(zoneRules[z] ?? []), ...(customRules[z] ?? [])].map((rule) => (
                         <div className="rule-row" key={rule}>
-                          <span>{rule}</span>
+                          <span>
+                            {ruleLabels[`${z}:${rule}`] ?? rule}
+                            {customizerOpen ? (
+                              <button
+                                className="inline-edit"
+                                title="Изменить нарушение"
+                                onClick={() => {
+                                  const value = window.prompt('Название нарушения', ruleLabels[`${z}:${rule}`] ?? rule)?.trim()
+                                  if (value && value !== rule) {
+                                    setRuleLabels((labels) => ({ ...labels, [`${z}:${rule}`]: value }))
+                                    setCustomizerDirty(true)
+                                  }
+                                }}
+                              >
+                                изменить
+                              </button>
+                            ) : null}
+                          </span>
                           <Switch
-                            aria-label={`${z}: ${rule}`}
+                            aria-label={`${zoneLabels[z] ?? z}: ${ruleLabels[`${z}:${rule}`] ?? rule}`}
                             checked={rulesEnabled[z + rule] ?? true}
-                            onCheckedChange={(v) => setRulesEnabled((p) => ({ ...p, [z + rule]: v }))}
+                            onCheckedChange={(v) => {
+                              setRulesEnabled((p) => ({ ...p, [z + rule]: v }))
+                              if (customizerOpen) setCustomizerDirty(true)
+                            }}
                           />
                         </div>
                       ))}
@@ -1309,71 +1493,84 @@ export default function App() {
             <>
               <div className="access-intro">
                 <div className="access-shield">
-                  <ShieldCheck size={28} />
+                  <ShieldCheck size={32} />
                 </div>
                 <div>
-                  <h2>Проход начинается с безопасности</h2>
-                  <p>СКУД проверяет право доступа, ИИ — соответствие требованиям зоны.</p>
+                  <h2>Контроль допуска и защитной экипировки</h2>
+                  <p>
+                    Система на базе LinQ AI в реальном времени проверяет сотрудников перед турникетом: наличие каски,
+                    светоотражающего жилета, защитных очков и статус в СКУД.
+                  </p>
                 </div>
-                <span className="connected">
-                  <i /> СКУД подключена
-                </span>
-              </div>
-              <div className="access-stats">
-                <div>
-                  <span>Проверено за смену</span>
-                  <strong>186</strong>
-                </div>
-                <div>
-                  <span>Отказы в проходе</span>
-                  <strong>2</strong>
-                </div>
-                <div>
-                  <span>Причина: нет допуска</span>
-                  <strong>1</strong>
-                </div>
-                <div>
-                  <span>Причина: нет СИЗ</span>
-                  <strong>1</strong>
+                <div className="access-stats">
+                  <div>
+                    <strong>99.4%</strong>
+                    <span>точность распознавания СИЗ</span>
+                  </div>
+                  <div>
+                    <strong>0.3 с</strong>
+                    <span>время проверки перед турникетом</span>
+                  </div>
+                  <div>
+                    <strong>1 420</strong>
+                    <span>проходов за сегодня</span>
+                  </div>
                 </div>
               </div>
-              <div className="section-heading">
-                <div>
-                  <h2>Контроль на проходной</h2>
-                  <p>Отказы и попытки прохода · 23 октября</p>
+
+              <div className="access-events">
+                <div className="section-heading">
+                  <div>
+                    <h2>Журнал проходной</h2>
+                    <p>События на турникетах КПП-1 и КПП-2</p>
+                  </div>
+                  <span className="live-text">
+                    <i /> Режим онлайн-верификации
+                  </span>
                 </div>
-                <span className="tag-neutral">Демонстрационные данные</span>
+                <div className="access-event-list">
+                  {events
+                    .filter((e) => e.type === 'access')
+                    .map((e) => (
+                      <article
+                        className={`access-event ${e.severity}`}
+                        key={e.id}
+                        onClick={() => setSelectedId(e.id)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <EventIcon event={e} />
+                        <div>
+                          <div className="access-event-title">
+                            <strong>{e.title}</strong>
+                            <SeverityBadge severity={e.severity} />
+                          </div>
+                          <p>{e.description}</p>
+                          <span>
+                            <span>{e.zone}</span> · <time>{e.time}</time> · <span>Сотрудник: {e.employee?.name ?? '—'}</span>
+                          </span>
+                        </div>
+                        <StatusBadge status={e.status} />
+                      </article>
+                    ))}
+                </div>
               </div>
-              {siteEvents
-                .filter((e) => e.type === 'access')
-                .map((e) => (
-                  <button className="access-event" key={e.id} onClick={() => setSelectedId(e.id)}>
-                    <span className="access-thumb" style={{ backgroundImage: `url(/images/${e.image}.png)` }} />
-                    <div>
-                      <div className="access-event-title">
-                        <strong>{e.title}</strong>
-                        <SeverityBadge severity={e.severity} />
-                      </div>
-                      <p>{e.description}</p>
-                      <span>
-                        <UserRound size={13} />
-                        {e.employee?.name} <b>·</b> {e.employee?.number} <b>·</b> {e.time}
-                      </span>
-                    </div>
-                    <ChevronRight size={18} />
-                  </button>
-                ))}
+
               <div className="access-explainer">
-                <div>
-                  <ShieldX size={20} />
-                  <h3>Нет допуска</h3>
-                  <p>Попытка несанкционированного прохода. Доступ заблокирован, информация передаётся охране.</p>
-                </div>
-                <div>
-                  <HardHat size={20} />
-                  <h3>Не соблюдены требования</h3>
-                  <p>Проход отклонён до выдачи необходимых СИЗ. После устранения причины проводится повторная проверка.</p>
-                </div>
+                <section>
+                  <h3>Как работает проверка</h3>
+                  <p>
+                    Камера на проходной захватывает силуэт сотрудника. Нейросеть LinQ TPU классифицирует наличие каждого
+                    элемента СИЗ. Если элемент отсутствует, турникет остаётся заблокированным, а на дисплее сотрудника
+                    появляется предупреждение.
+                  </p>
+                </section>
+                <section>
+                  <h3>Интеграция со СКУД</h3>
+                  <p>
+                    Данные оптической верификации сопоставляются с идентификатором пропуска. При несовпадении или попытке
+                    прохода по чужому пропуску система мгновенно сигнализирует сотрудникам службы безопасности.
+                  </p>
+                </section>
               </div>
             </>
           ) : null}
@@ -1424,17 +1621,228 @@ export default function App() {
                     ['Действия сотрудников', siteEvents.filter((e) => e.type === 'person').length],
                     ['Контроль доступа', siteEvents.filter((e) => e.type === 'access').length],
                     ['Состояние среды', siteEvents.filter((e) => e.type === 'environment').length],
-                  ].map(([label, n]) => (
-                    <div className="type-stat" key={label}>
+                  ].map(([label, n], index) => (
+                    <button
+                      className="type-stat"
+                      key={label}
+                      onClick={() => openTypeEvents((['person', 'access', 'environment'] as const)[index])}
+                      title={`Открыть журнал: ${label}`}
+                    >
                       <span>{label}</span>
                       <strong>{n}</strong>
-                    </div>
+                    </button>
                   ))}
                   <div className="analytics-note">
                     <ShieldCheck size={18} /> Одно нарушение — одно уведомление. Повторные срабатывания объединяются.
                   </div>
                 </section>
               </div>
+            </>
+          ) : null}
+          {page === 'training' ? (
+            <>
+              <section className="training-hero">
+                <div className="training-hero-icon">
+                  <GraduationCap size={24} />
+                </div>
+                <div>
+                  <h2>Безопасность начинается с знаний</h2>
+                  <p>Изучайте правила предприятия, проходите короткие тесты и возвращайтесь к материалам в любое время.</p>
+                </div>
+                <div className="training-progress">
+                  <strong>2 из 6</strong>
+                  <span>уроков пройдено</span>
+                  <div className="training-progress-counts">
+                    <b>2 <small>пройдено</small></b>
+                    <b>4 <small>осталось</small></b>
+                  </div>
+                  <i><b style={{ width: '33%' }} /></i>
+                </div>
+                {canCustomizeTraining ? (
+                  <button
+                    className="training-customize"
+                    onClick={() => {
+                      setTrainingTitleDraft(trainingTitle)
+                      setTrainingCustomizeOpen((value) => !value)
+                    }}
+                    title="Настроить программу обучения"
+                  >
+                    <Settings2 size={14} /> {trainingCustomizeOpen ? 'Скрыть настройку' : 'Настроить обучение'}
+                  </button>
+                ) : null}
+              </section>
+              {trainingCustomizeOpen && canCustomizeTraining ? (
+                <div className="training-customizer">
+                  <div>
+                    <strong>Настройка программы</strong>
+                    <p>Изменения видны сотрудникам предприятия.</p>
+                  </div>
+                  <label>
+                    <span>Название вводного урока</span>
+                    <input
+                      value={trainingTitleDraft}
+                      onChange={(e) => setTrainingTitleDraft(e.target.value)}
+                    />
+                  </label>
+                  <button
+                    className="training-save"
+                    onClick={() => {
+                      setTrainingTitle(trainingTitleDraft.trim() || 'Основы безопасности')
+                      setTrainingCustomizeOpen(false)
+                      notify('Программа обучения сохранена.')
+                    }}
+                  >
+                    Сохранить
+                  </button>
+                </div>
+              ) : null}
+              <div className="training-layout">
+                <section className="training-video-card">
+                  <div className="section-heading">
+                    <div>
+                      <h2>Видеоурок · {trainingTitle}</h2>
+                      <p>04:32 · обязательный вводный инструктаж</p>
+                    </div>
+                    <span className="tag-neutral">Для всех сотрудников</span>
+                  </div>
+                  <button
+                    className={`training-video ${trainingVideoPlaying ? 'playing' : ''}`}
+                    onClick={() => setTrainingVideoPlaying((value) => !value)}
+                    aria-label={trainingVideoPlaying ? 'Поставить видео на паузу' : 'Запустить видео'}
+                  >
+                    <span className="training-video-bg" />
+                    <span className="training-video-overlay" />
+                    <span className="training-video-label">
+                      <Video size={14} /> Вводный инструктаж · Цех № 1
+                    </span>
+                    <span className="training-play">
+                      {trainingVideoPlaying ? <Pause size={24} /> : <Play size={24} fill="currentColor" />}
+                    </span>
+                    <span className="training-video-caption">
+                      {trainingVideoPlaying ? 'Воспроизведение · 00:18 / 04:32' : 'Нажмите, чтобы начать просмотр'}
+                    </span>
+                  </button>
+                  <div className="training-card-footer">
+                    <span>
+                      <Check size={14} /> После просмотра урок будет отмечен как пройденный
+                    </span>
+                    <button
+                      className="training-link"
+                      onClick={() => notify('Видеоурок открыт в демонстрационном режиме.')}
+                    >
+                      Открыть в новом окне <ArrowRight size={13} />
+                    </button>
+                  </div>
+                </section>
+                <section className="training-quiz-card">
+                  <div className="training-card-icon">
+                    <ClipboardCheck size={19} />
+                  </div>
+                  <h2>Проверьте знания</h2>
+                  <p>Короткий тест после инструктажа поможет закрепить правила.</p>
+                  {!trainingQuizOpen ? (
+                    <button
+                      className="training-primary"
+                      onClick={() => {
+                        setTrainingQuizOpen(true)
+                        setTrainingQuizDone(false)
+                        setTrainingQuizAnswer(null)
+                      }}
+                    >
+                      Начать тест <ArrowRight size={14} />
+                    </button>
+                  ) : (
+                    <div className="training-question">
+                      <strong>Что нужно сделать перед входом в производственную зону?</strong>
+                      {['Проверить каску и необходимые СИЗ', 'Взять телефон с собой', 'Пройти под подвешенным грузом'].map(
+                        (answer) => (
+                          <button
+                            key={answer}
+                            className={trainingQuizAnswer === answer ? 'selected' : ''}
+                            onClick={() => setTrainingQuizAnswer(answer)}
+                          >
+                            {answer}
+                          </button>
+                        )
+                      )}
+                      {trainingQuizDone ? (
+                        <p className={trainingQuizAnswer === 'Проверить каску и необходимые СИЗ' ? 'quiz-success' : 'quiz-error'}>
+                          {trainingQuizAnswer === 'Проверить каску и необходимые СИЗ'
+                            ? 'Верно! Правило усвоено.'
+                            : 'Попробуйте ещё раз и выберите безопасное действие.'}
+                        </p>
+                      ) : (
+                        <button
+                          className="training-submit"
+                          disabled={!trainingQuizAnswer}
+                          onClick={() => setTrainingQuizDone(true)}
+                        >
+                          Проверить ответ
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </section>
+              </div>
+              <section className="training-materials">
+                <div className="section-heading">
+                  <div>
+                    <h2>Материалы для изучения</h2>
+                    <p>Читайте в удобном формате и скачивайте памятки для работы</p>
+                  </div>
+                  <span className="tag-neutral">6 материалов</span>
+                </div>
+                <div className="training-material-grid">
+                  <article className="training-material">
+                    <span className="training-material-icon blue">
+                      <BookOpen size={19} />
+                    </span>
+                    <div>
+                      <strong>Правила безопасной работы</strong>
+                      <p>Статья · 7 минут чтения</p>
+                    </div>
+                    <button
+                      className="training-icon-action"
+                      title="Открыть статью"
+                      onClick={() => notify('Статья открыта в режиме чтения.')}
+                    >
+                      <ArrowRight size={15} />
+                    </button>
+                  </article>
+                  <article className="training-material">
+                    <span className="training-material-icon orange">
+                      <FileText size={19} />
+                    </span>
+                    <div>
+                      <strong>Руководство по СИЗ</strong>
+                      <p>PDF · 12 страниц</p>
+                    </div>
+                    <button
+                      className="training-icon-action"
+                      title="Открыть руководство"
+                      onClick={() => notify('Руководство открыто в режиме чтения.')}
+                    >
+                      <ArrowRight size={15} />
+                    </button>
+                  </article>
+                  <article className="training-material">
+                    <span className="training-material-icon green">
+                      <Download size={19} />
+                    </span>
+                    <div>
+                      <strong>Памятка для смены</strong>
+                      <p>Раздаточный материал · TXT</p>
+                    </div>
+                    <button
+                      className="training-icon-action"
+                      title="Скачать памятку"
+                      onClick={downloadTrainingHandout}
+                    >
+                      <Download size={15} />
+                    </button>
+                  </article>
+                </div>
+              </section>
             </>
           ) : null}
           {page === 'settings' ? (
@@ -1504,410 +1912,383 @@ export default function App() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={testSending || notifyStatus?.telegram?.status !== 'online'}
+                    disabled={testSending}
                     onClick={() => handleSendTest()}
-                    style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}
+                    style={{ fontSize: 12 }}
                   >
-                    <BellRing size={13} />
-                    {testSending ? 'Отправка...' : 'Отправить тестовое оповещение'}
+                    {testSending ? 'Отправка...' : 'Отправить тест всем'}
                   </Button>
                 </div>
 
-                <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <strong style={{ fontSize: 13 }}>Подключенные чаты ({notifyStatus?.subscribers?.length || 0})</strong>
-                    <button
-                      onClick={() => api.getNotificationsStatus().then(setNotifyStatus)}
-                      style={{ background: 'none', border: 'none', color: 'var(--blue)', fontSize: 11, cursor: 'pointer' }}
-                    >
-                      Обновить
-                    </button>
-                  </div>
-
-                  {notifyStatus?.subscribers && notifyStatus.subscribers.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {notifyStatus.subscribers.map((sub: any) => (
-                        <div
-                          key={sub.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '8px 12px',
-                            background: '#f8fafc',
-                            borderRadius: 6,
-                            border: '1px solid #e2e8f0',
-                            fontSize: 12,
-                          }}
-                        >
-                          <div>
-                            <b>{sub.title || `Чат ${sub.chat_id}`}</b>
-                            <span style={{ color: 'var(--subtle)', marginLeft: 8, fontSize: 11 }}>
-                              {sub.kind === 'private' ? 'личный' : sub.kind} · ID: {sub.chat_id}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <label style={{ fontSize: 11, color: 'var(--subtle)' }}>Порог:</label>
-                            <select
-                              value={sub.min_severity}
-                              onChange={(e) => handleUpdateSubscriber(sub.id, e.target.value)}
-                              style={{ padding: '3px 6px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 11 }}
-                            >
-                              <option value="low">Все (low)</option>
-                              <option value="medium">Средний (medium)</option>
-                              <option value="high">Высокий (high)</option>
-                              <option value="critical">Критический (critical)</option>
-                            </select>
-                            <button
-                              onClick={() => handleDeleteSubscriber(sub.id)}
-                              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}
-                              title="Удалить подписчика"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                <div style={{ marginTop: 15 }}>
+                  <h3 style={{ fontSize: 13, marginBottom: 8, color: '#334155' }}>
+                    Зарегистрированные подписчики ({notifyStatus?.subscribers?.length || 0})
+                  </h3>
+                  {notifyStatus?.subscribers?.length > 0 ? (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                            <th style={{ padding: '8px 12px' }}>Получатель</th>
+                            <th style={{ padding: '8px 12px' }}>Тип</th>
+                            <th style={{ padding: '8px 12px' }}>Фильтр важности</th>
+                            <th style={{ padding: '8px 12px', textAlign: 'right' }}>Действия</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {notifyStatus.subscribers.map((sub: any) => (
+                            <tr key={sub.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '8px 12px' }}>
+                                <strong>{sub.title}</strong>
+                                {sub.username && <span style={{ color: '#64748b', marginLeft: 6 }}>@{sub.username}</span>}
+                              </td>
+                              <td style={{ padding: '8px 12px' }}>
+                                <span style={{
+                                  background: sub.chat_type === 'private' ? '#e0f2fe' : '#fef3c7',
+                                  color: sub.chat_type === 'private' ? '#0369a1' : '#b45309',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                }}>
+                                  {sub.chat_type === 'private' ? 'Личный' : 'Группа'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px 12px' }}>
+                                <select
+                                  value={sub.min_severity}
+                                  onChange={(e) => handleUpdateSubscriber(sub.id, e.target.value)}
+                                  style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 11 }}
+                                >
+                                  <option value="info">Все (Инфо + Внимание + Критич.)</option>
+                                  <option value="warning">Только Внимание и Критические</option>
+                                  <option value="critical">Только Критические</option>
+                                </select>
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSendTest(sub.id)}
+                                  style={{ height: 26, padding: '0 8px', fontSize: 11, marginRight: 6 }}
+                                  title="Отправить тестовое сообщение"
+                                >
+                                  <Send size={12} />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteSubscriber(sub.id)}
+                                  style={{ height: 26, padding: '0 8px', color: '#ef4444' }}
+                                  title="Удалить подписчика"
+                                >
+                                  <Trash2 size={12} />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   ) : (
-                    <div style={{ padding: '12px 14px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', fontSize: 12, color: 'var(--subtle)' }}>
-                      Чаты подключаются автоматически: перейдите по ссылке выше и отправьте боту <code>/start</code> в личке или добавьте в групповой чат дежурной смены.
+                    <div style={{ padding: '16px', background: '#f8fafc', borderRadius: 8, border: '1px dashed #cbd5e1', textAlign: 'center', color: '#64748b', fontSize: 12 }}>
+                      Нет активных подписчиков. Нажмите кнопку выше и отправьте <code>/start</code> боту в Telegram.
                     </div>
                   )}
                 </div>
               </section>
 
               <section className="settings-card">
-                <h2>Оповещения в браузере</h2>
+                <h2>Уведомления системы</h2>
                 <div className="setting-row">
                   <div>
                     <strong>Звуковые оповещения</strong>
                     <p>Сигнал при появлении критического события</p>
                   </div>
-                  <Switch aria-label="Звуковые оповещения" checked={sound} onCheckedChange={setSound} />
-                </div>
-                <div className="setting-row">
-                  <div>
-                    <strong>Выделение объектов на камерах</strong>
-                    <p>Показывать рамки обнаружений на демонстрационных кадрах</p>
-                  </div>
-                  <Switch aria-label="Выделение объектов на камерах" checked={showBoxes} onCheckedChange={setShowBoxes} />
-                </div>
-                <div className="setting-row">
-                  <div>
-                    <strong>Постоянная лента событий</strong>
-                    <p>Доступна справа на всех страницах сервиса</p>
-                  </div>
-                  <span className="connected">
-                    <Check size={13} /> Всегда включена
-                  </span>
+                  <Switch checked={sound} onCheckedChange={setSound} />
                 </div>
               </section>
+
               <section className="settings-card">
-                <h2>Демонстрационная среда</h2>
-                <div className="system-detail">
-                  <span>Режим работы</span>
-                  <b>Прототип · данные смоделированы</b>
+                <h2>Демонстрация системы</h2>
+                <div className="setting-row">
+                  <div>
+                    <strong>Сброс демонстрационных данных</strong>
+                    <p>Возвращает исходные статусы всех нарушений</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      localStorage.removeItem('tuk-tuk-events-v1')
+                      setEvents(initialEvents)
+                      notify('Демоданные сброшены к начальному состоянию.')
+                    }}
+                  >
+                    Сбросить
+                  </Button>
                 </div>
-                <div className="system-detail">
-                  <span>Вычислительная платформа</span>
-                  <b>LinQ · демонстрация интерфейса</b>
+                <div className="setting-row">
+                  <div>
+                    <strong>Экспорт настроек предприятия</strong>
+                    <p>Выгрузить конфигурацию правил и зон в JSON</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const data = { siteId, zoneRules, customZones, customRules, rulesEnabled }
+                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `tuk-tuk-settings-${siteId}.json`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                      notify('Настройки экспортированы.')
+                    }}
+                  >
+                    Выгрузить JSON
+                  </Button>
                 </div>
-                <div className="system-detail">
-                  <span>Тема интерфейса</span>
-                  <b>Светлая</b>
-                </div>
-                <div className="system-detail">
-                  <span>Часовой пояс объекта</span>
-                  <b>Москва · UTC+3</b>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEvents(initialEvents)
-                    setSeen([])
-                    setRulesEnabled({})
-                    notify('Демонстрационные события восстановлены.')
-                  }}
-                >
-                  Сбросить демоданные
-                </Button>
               </section>
             </>
           ) : null}
-          <footer className="workspace-footer">
-            <span>Тук-Тук · Безопасность начинается с внимания</span>
-            <span>
-              <ShieldCheck size={12} /> Обработка на LinQ
-            </span>
-          </footer>
         </div>
       </main>
-      <aside className="notification-rail" aria-label="Постоянная лента уведомлений">
+
+      <aside className="notification-rail">
         <div className="rail-header">
           <div>
-            <span className="rail-title">
-              <Bell size={18} />
-              <h2>Лента событий</h2>
-              <b>{siteEvents.filter((e) => !seen.includes(e.id)).length}</b>
-            </span>
+            <strong>События смены</strong>
+            <span>{openEvents.length} активных</span>
           </div>
-          <button
-            className={`icon-button ${sound ? 'selected' : ''}`}
-            aria-label={sound ? 'Выключить звук' : 'Включить звук'}
-            aria-pressed={sound}
-            onClick={() => {
-              setSound((v) => !v)
-              notify(sound ? 'Звук уведомлений выключен.' : 'Звук уведомлений включён для демособытий.')
-            }}
-          >
-            {sound ? <Volume2 size={17} /> : <VolumeX size={17} />}
-          </button>
-        </div>
-        <div className="rail-tabs">
-          <button className={feedTab === 'all' ? 'active' : ''} onClick={() => setFeedTab('all')}>
-            Все события <span>{siteEvents.length}</span>
-          </button>
-          <button className={feedTab === 'critical' ? 'active' : ''} onClick={() => setFeedTab('critical')}>
-            Критические <span>{siteEvents.filter((e) => e.severity === 'critical').length}</span>
-          </button>
-        </div>
-        <div className="rail-filter">
-          <label>
-            <input type="checkbox" checked={feedUnread} onChange={(e) => setFeedUnread(e.target.checked)} /> Только непрочитанные
-          </label>
-          <button
-            title="Прочитать все"
-            aria-label="Прочитать все"
-            onClick={() => {
-              setSeen(siteEvents.map((e) => e.id))
-              notify('Все уведомления отмечены прочитанными.')
-            }}
-          >
-            <CheckCheck size={17} />
-          </button>
-        </div>
-        <div className="feed-list">
-          {feedEvents.map((e, i) => (
+          <div className="rail-header-actions">
             <button
-              key={e.id}
-              className={`feed-card ${e.severity} ${!seen.includes(e.id) ? 'unread' : ''}`}
+              className={`icon-button ${sound ? 'selected' : ''}`}
+              title={sound ? 'Звук включён' : 'Звук выключен'}
+              aria-label={sound ? 'Отключить звук' : 'Включить звук'}
+              data-tooltip={sound ? 'Звук включён' : 'Звук выключен'}
               onClick={() => {
-                setSelectedId(e.id)
-                setSeen((s) => (s.includes(e.id) ? s : [...s, e.id]))
+                setSound((v) => !v)
+                notify(!sound ? 'Звуковые оповещения включены' : 'Звук отключён')
               }}
             >
-              <div className="feed-card-top">
+              {sound ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+            <button
+              className="icon-button"
+              aria-label="Скрыть ленту событий"
+              title="Скрыть ленту событий"
+              onClick={() => setRailHidden(true)}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="rail-tabs">
+          <button
+            className={feedTab === 'all' ? 'active' : ''}
+            onClick={() => setFeedTab('all')}
+          >
+            Все <b>{siteEvents.length}</b>
+          </button>
+          <button
+            className={feedTab === 'critical' ? 'active' : ''}
+            onClick={() => setFeedTab('critical')}
+          >
+            Критические <b>{criticalCount}</b>
+          </button>
+        </div>
+        <div className="rail-feed">
+          {feedEvents.map((e) => (
+            <article
+              key={e.id}
+              className={`feed-card ${e.severity} ${seen.includes(e.id) ? 'read' : ''} ${selectedId === e.id ? 'active' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Открыть событие ${e.id}: ${e.title}`}
+              onClick={() => setSelectedId(e.id)}
+            >
+              <div className="feed-card-header">
+                <span className="feed-time">{e.time}</span>
+                <span className="feed-camera">{e.camera}</span>
                 <SeverityBadge severity={e.severity} short />
-                <time>{e.time.slice(0, 5)}</time>
               </div>
               <strong>{e.title}</strong>
-              <span className="feed-location">
-                <MapPin size={11} />
-                {e.zone}
-                <b>·</b>
-                {e.camera}
-              </span>
-              {e.employee ? (
-                <span className="feed-person">
-                  <span className="mini-avatar">
-                    {e.employee.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')}
-                  </span>
-                  {e.employee.name}
-                  <span className="skud-tag">СКУД</span>
-                </span>
-              ) : null}
-              {e.type === 'environment' ? <p className="feed-description">{e.description.split('. ')[0]}.</p> : null}
-              {e.id === 'TK-1047' ? (
-                <span className="feed-access-note">
-                  <ShieldX size={12} /> Допуск истёк · Проход заблокирован
-                </span>
-              ) : null}
-              {i === 0 || e.type === 'environment' ? (
-                <span className="feed-contact">
-                  <Radio size={12} />
-                  {e.contact.radio}
-                </span>
-              ) : null}
-              <div className="feed-card-bottom">
+              <p>{e.zone}</p>
+              <div className="feed-card-footer">
                 <StatusBadge status={e.status} />
-                <ChevronRight size={14} />
+                <label
+                  className="feed-read-toggle"
+                  onClick={(ev) => ev.stopPropagation()}
+                  title={seen.includes(e.id) ? 'Отмечено как прочитанное' : 'Отметить прочитанным'}
+                >
+                  <input
+                    type="checkbox"
+                    checked={seen.includes(e.id)}
+                    onChange={() => {
+                      setSeen((curr) => (curr.includes(e.id) ? curr.filter((x) => x !== e.id) : [...curr, e.id]))
+                    }}
+                  />
+                  <span>Прочитано</span>
+                </label>
               </div>
-            </button>
+            </article>
           ))}
           {feedEvents.length === 0 ? (
-            <div className="feed-empty">
-              <CheckCheck size={26} />
-              <strong>Все события прочитаны</strong>
-              <p>Снимите фильтр, чтобы увидеть историю.</p>
+            <div className="empty-rail">
+              <CircleCheck size={28} />
+              <span>Нет новых уведомлений</span>
             </div>
           ) : null}
         </div>
-        <div className="rail-bottom">
-          <span>
-            <i className="small-dot green" /> Подключение активно
-          </span>
-          <button className="demo-button" onClick={() => setModal('demo')}>
-            <Plus size={13} /> Демо
-          </button>
-        </div>
       </aside>
-            <Dialog
-        open={!!inspectedCamera}
-        onOpenChange={(open) => {
-          if (!open) {
-            setInspectedCamera(null)
-            }
-        }}
-      >
-        <DialogContent className="event-dialog" style={{ maxWidth: '980px', width: '95vw' }}>
+
+      {railHidden ? (
+        <button
+          className="rail-restore"
+          aria-label="Показать ленту событий"
+          title="Показать ленту событий"
+          onClick={() => setRailHidden(false)}
+        >
+          <Bell size={16} />
+        </button>
+      ) : null}
+
+      {/* Real-time Camera Inspection Dialog with MJPEG / Neural telemetry */}
+      <Dialog open={!!inspectedCamera} onOpenChange={(open) => !open && setInspectedCamera(null)}>
+        <DialogContent className="max-w-4xl p-0 overflow-hidden bg-slate-950 text-white border-slate-800">
+          <DialogTitle className="sr-only">
+            {inspectedCamera?.name ?? 'Камера'}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Прямой видеоэфир и нейросетевая аналитика LinQ TPU
+          </DialogDescription>
           {inspectedCamera ? (
-            <>
-              <DialogHeader>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                  <span className="detail-eyebrow">
-                    <span className="small-dot green" /> ПРЯМОЙ ЭФИР КАМЕРЫ {inspectedCamera.id} · {inspectedCamera.name}
-                  </span>
+            <div>
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/80">
+                <div className="flex items-center gap-3">
+                  <span className="small-dot green" />
+                  <strong className="text-sm font-semibold">{inspectedCamera.id} · {inspectedCamera.name}</strong>
                   {isLiveBackend && inspectedCamera.id === 'CAM-01' && (
-                    <div className="stream-source-switch">
-                      <span className="stream-source-btn active" style={{ cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                        <span className="small-dot green" style={{ width: '6px', height: '6px' }} />
-                        LinQ TPU / ONNX Stream
-                      </span>
-                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      LinQ TPU (ONLINE)
+                    </span>
                   )}
                 </div>
-                <DialogTitle className="detail-title">
-                  {inspectedCamera.name} — Видеоаналитика в реальном времени
-                </DialogTitle>
-                <DialogDescription>
-                  {inspectedCamera.workshop} · {inspectedCamera.zone} · Потоковая детекция СИЗ и нарушений
-                </DialogDescription>
-              </DialogHeader>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">{inspectedCamera.workshop} · {inspectedCamera.zone}</span>
+                </div>
+              </div>
 
-              <div>
+              <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
                 <CameraView
                   camera={inspectedCamera}
                   event={events.find((e) => e.id === inspectedCamera.event)}
                   image={inspectedCamera.image}
                   video={inspectedCamera.video}
                   online={inspectedCamera.online}
-                  large={true}
+                  large
                   showBoxes={showBoxes}
+                  playing={true}
                   mode="live"
                   useMjpeg={isLiveBackend && inspectedCamera.id === 'CAM-01'}
-                  mjpegUrl="/api/v1/cameras/CAM-01/stream"
+                  mjpegUrl="/api/v1/cameras/CAM-01/stream.mjpg"
+                  zoom={cameraZoom}
+                  onZoomIn={() => setCameraZoom((z) => Math.min(2.5, Number((z + 0.25).toFixed(2))))}
+                  onZoomOut={() => setCameraZoom((z) => Math.max(1, Number((z - 0.25).toFixed(2))))}
+                  onZoomReset={() => setCameraZoom(1)}
                 />
+              </div>
+
+              <div className="p-4 bg-slate-900">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-200">Видеоаналитика в реальном времени</h3>
+                    <p className="text-xs text-slate-400">Нейросетевой модуль детекции СИЗ и нарушений безопасности</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">Движок:</span>
+                    <strong className="text-xs text-blue-400">LinQ Neural Guard</strong>
+                  </div>
+                </div>
 
                 <div className="camera-telemetry-panel">
                   <div className="telemetry-card">
-                    <span>Скорость обработки</span>
+                    <span>Скорость инференса</span>
                     <strong>{isLiveBackend && inspectedCamera.id === 'CAM-01' ? '25.0 FPS' : '30.0 FPS'}</strong>
                   </div>
                   <div className="telemetry-card">
-                    <span>Инференс нейросети</span>
+                    <span>Задержка (Latency)</span>
                     <strong>{isLiveBackend && inspectedCamera.id === 'CAM-01' ? '18.4 мс' : '14.8 мс'}</strong>
                   </div>
                   <div className="telemetry-card">
-                    <span>Объекты и персонал</span>
-                    <strong>4 в поле зрения</strong>
+                    <span>Аппаратный ускоритель</span>
+                    <strong style={{ color: '#2563eb' }}>{isLiveBackend && inspectedCamera.id === 'CAM-01' ? 'LinQ TPU (H1M)' : 'Local ONNX'}</strong>
                   </div>
                   <div className="telemetry-card">
-                    <span>Контроль СИЗ</span>
-                    <strong style={{ color: '#ef4444' }}>1 без каски</strong>
+                    <span>Обнаружено объектов</span>
+                    <strong>{events.filter((e) => e.camera === inspectedCamera.id && isOpen(e)).length} чел.</strong>
                   </div>
                 </div>
               </div>
-
-              <div className="detail-footer" style={{ marginTop: '14px' }}>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowBoxes((v) => !v)}
-                  >
-                    <Sparkles size={14} />
-                    {showBoxes ? 'Скрыть разметку ИИ' : 'Включить разметку ИИ'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSnapshotTimestamp(Date.now())
-                      notify(`Свежий стоп-кадр с камеры ${inspectedCamera.id} из LinQ TPU / ONNX Stream зафиксирован на главном экране.`)
-                    }}
-                  >
-                    <CameraIcon size={14} /> Сделать скриншот
-                  </Button>
-                </div>
-                <div>
-                  {inspectedCamera.event && (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setSelectedId(inspectedCamera.event ?? null)
-                        setInspectedCamera(null)
-                      }}
-                    >
-                      <TriangleAlert size={14} /> Открыть инцидент {inspectedCamera.event}
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setInspectedCamera(null)}
-                  >
-                    Закрыть
-                  </Button>
-                </div>
-              </div>
-            </>
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={!!selected}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedId(null)
-            setPlaying(false)
-          }
-        }}
-      >
-        <DialogContent className="event-dialog">
+      {/* Event Details Dialog */}
+      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelectedId(null)}>
+        <DialogContent className="event-dialog max-w-3xl">
+          <DialogTitle className="sr-only">
+            {selected?.title ?? 'Детали события'}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Карточка инцидента безопасности с видеоподтверждением и контактами ответственных
+          </DialogDescription>
           {selected ? (
-            <>
-              <DialogHeader>
-                <span className="detail-eyebrow">
-                  СОБЫТИЕ {selected.id} <b>23 ОКТЯБРЯ · {selected.time}</b>
-                </span>
-                <DialogTitle className="detail-title">{selected.title}</DialogTitle>
-                <DialogDescription>
-                  {selected.zone} · Камера {selected.camera}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="detail-tags">
-                <SeverityBadge severity={selected.severity} />
-                <StatusBadge status={selected.status} />
-                <span className="tag-neutral">Уверенность ИИ 98%</span>
+            <div>
+              <div className="detail-eyebrow">
+                <span>{selected.id}</span>
+                <span>·</span>
+                <span>{selected.zone}</span>
+                <span>·</span>
+                <span>{selected.camera}</span>
+                <span>·</span>
+                <span>{selected.time}</span>
+                <b className="ml-auto">
+                  <SeverityBadge severity={selected.severity} />
+                </b>
               </div>
-              <div className="detail-columns">
-                <div>
-                  <CameraView camera={cameras.find((c) => c.id === selected.camera)} event={selected} image={selected.image} video={selected.video || cameras.find((c) => c.id === selected.camera)?.video} playing={playing} large showBoxes={showBoxes} mode={playing ? 'live' : 'snapshot'} />
+              <h2 className="detail-title">{selected.title}</h2>
+              <div className="detail-layout">
+                <div className="detail-media">
+                  <CameraView
+                    event={selected}
+                    image={selected.image}
+                    video={selected.video}
+                    online={true}
+                    large
+                    showBoxes={showBoxes}
+                    playing={playing}
+                    zoom={cameraZoom}
+                    onZoomIn={() => setCameraZoom((z) => Math.min(2.5, Number((z + 0.25).toFixed(2))))}
+                    onZoomOut={() => setCameraZoom((z) => Math.max(1, Number((z - 0.25).toFixed(2))))}
+                    onZoomReset={() => setCameraZoom(1)}
+                  />
                   <div className="clip-controls">
-                    <button aria-label={playing ? 'Остановить просмотр' : 'Просмотреть демофрагмент'} onClick={() => setPlaying((v) => !v)}>
+                    <button
+                      aria-label={playing ? 'Остановить просмотр' : 'Просмотреть демофрагмент'}
+                      onClick={() => setPlaying((v) => !v)}
+                    >
                       {playing ? <Pause size={15} /> : <Play size={15} />}
                     </button>
-                    <span>{playing ? 'Воспроизведение демофрагмента' : 'Стоп-кадр события'}</span>
+                    <span>{playing ? 'Демонстрация фрагмента' : 'Стоп-кадр события'}</span>
                     <div className={`clip-track ${playing ? 'playing' : ''}`}>
                       <i />
                     </div>
-                    <span>00:25</span>
+                    <span>00:15</span>
                   </div>
                   <div className="detail-description">
                     <h3>Что произошло</h3>
@@ -1923,72 +2304,23 @@ export default function App() {
                 </div>
                 <div className="detail-side">
                   {selected.employee ? (
-                    <section className="employee-section">
-                      <span className="detail-section-label">
-                        <UserRound size={14} /> Данные сотрудника <span className="skud-tag">СКУД</span>
-                      </span>
-                      <div className="employee-name">
-                        <div className="avatar">
-                          {selected.employee.name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')}
-                        </div>
-                        <div>
-                          <strong>{selected.employee.name}</strong>
-                          <span>{selected.employee.role}</span>
-                        </div>
-                      </div>
-                      <div className="employee-number">
-                        Табельный номер <b>{selected.employee.number}</b>
-                      </div>
-                      <div className={`employee-access ${selected.employee.access.includes('отказано') ? 'denied' : ''}`}>
-                        <ShieldCheck size={14} />
-                        {selected.employee.access}
-                      </div>
+                    <section className="employee-card">
+                      <h3>Сотрудник</h3>
+                      <strong>{selected.employee.name}</strong>
+                      <span>{selected.employee.role}</span>
+                      <small>Табельный: {selected.employee.number} · {selected.employee.access}</small>
                     </section>
-                  ) : (
-                    <section className="employee-section">
-                      <span className="detail-section-label">
-                        {selected.type === 'environment' ? <Warehouse size={15} /> : <UserRound size={15} />}{' '}
-                        {selected.type === 'environment' ? 'Объект среды' : 'Человек не идентифицирован'}
-                      </span>
-                      <p>
-                        {selected.type === 'environment'
-                          ? 'Нарушение не связано с действиями конкретного сотрудника.'
-                          : 'Данные сотрудника отсутствуют. Проверка личности доступна охране.'}
-                      </p>
-                    </section>
-                  )}
-                  <section className="contact-section">
-                    <span className="detail-section-label">Связаться с ответственным</span>
+                  ) : null}
+                  <section className="contact-card">
+                    <h3>Связаться</h3>
                     <strong>{selected.contact.name}</strong>
                     <span>{selected.contact.role}</span>
-                    <div className="contact-line">
-                      <Radio size={16} />
-                      <div>
-                        <small>Рация</small>
-                        <b>{selected.contact.radio}</b>
-                      </div>
-                      <button
-                        aria-label="Скопировать канал рации"
-                        className="icon-button"
-                        onClick={() => {
-                          void navigator.clipboard?.writeText(selected.contact.radio)
-                          notify('Канал рации скопирован.')
-                        }}
-                      >
-                        <Copy size={13} />
-                      </button>
+                    <div>
+                      <span>Рация: {selected.contact.radio}</span>
+                      <a href={`tel:${selected.contact.phone}`}>
+                        <Phone size={12} /> {selected.contact.phone}
+                      </a>
                     </div>
-                    <div className="contact-line">
-                      <Phone size={16} />
-                      <div>
-                        <small>Телефон с добавочным</small>
-                        <b>{selected.contact.phone}</b>
-                      </div>
-                    </div>
-                    <p className="demo-contact-note">Демонстрационные контакты</p>
                   </section>
                 </div>
               </div>
@@ -1996,123 +2328,77 @@ export default function App() {
                 <Button
                   variant="ghost"
                   size="sm"
+                  className="feedback-button"
+                  title="Обучить ИИ распознавать это как ложное срабатывание"
                   disabled={selected.status === 'dismissed'}
                   onClick={() => updateStatus(selected.id, 'dismissed')}
                 >
-                  Ложное срабатывание
+                  <Sparkles size={14} /> Обучить ИИ: ложное срабатывание
                 </Button>
                 <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!isOpen(selected) || selected.status === 'working'}
-                    onClick={() => updateStatus(selected.id, 'working')}
-                  >
-                    <Clock3 size={14} />
-                    {selected.status === 'working' ? 'В работе' : 'Взять в работу'}
-                  </Button>
-                  <Button size="sm" disabled={!isOpen(selected)} onClick={() => updateStatus(selected.id, 'resolved')}>
-                    <Check size={14} /> Нарушение устранено
-                  </Button>
+                  {selected.status === 'new' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="work-button"
+                      title="Взять нарушение в работу"
+                      onClick={() => updateStatus(selected.id, 'working')}
+                    >
+                      <Clock3 size={14} /> Взять в работу
+                    </Button>
+                  ) : null}
+                  {selected.status === 'working' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="resolve-button"
+                      title="Отметить нарушение как устранённое"
+                      onClick={() => updateStatus(selected.id, 'resolved')}
+                    >
+                      <Check size={14} /> Нарушение устранено
+                    </Button>
+                  ) : null}
                 </div>
               </div>
-            </>
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={modal !== null}
-        onOpenChange={(open) => {
-          if (!open) setModal(null)
-        }}
-      >
-        <DialogContent className="small-dialog">
+
+      {/* Demo Modal */}
+      <Dialog open={modal === 'demo'} onOpenChange={(open) => !open && setModal(null)}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{modal === 'help' ? 'Добро пожаловать в Тук-Тук' : 'Добавить демособытие'}</DialogTitle>
+            <DialogTitle>Демонстрационные сценарии</DialogTitle>
             <DialogDescription>
-              {modal === 'help'
-                ? 'Безопасность людей и среды — на одном экране.'
-                : 'Проверьте, как новое событие появляется в постоянной ленте.'}
+              Выберите типовой инцидент для мгновенного просмотра в интерфейсе:
             </DialogDescription>
           </DialogHeader>
-          {modal === 'help' ? (
-            <div className="help-content">
-              <p>
-                <Video size={20} />
-                <span>
-                  <strong>Следите за объектом</strong>Выберите зону и откройте камеру, чтобы посмотреть событие.
+          <div className="demo-options">
+            {demoOptions.map(({ label, id, icon: Icon }) => (
+              <button
+                key={id}
+                className="demo-option-item"
+                onClick={() => {
+                  setModal(null)
+                  setSelectedId(id)
+                }}
+              >
+                <span className="demo-option-icon">
+                  <Icon size={18} />
                 </span>
-              </p>
-              <p>
-                <BellRing size={20} />
-                <span>
-                  <strong>Реагируйте на уведомления</strong>В правой ленте всегда доступны нарушения, данные СКУД и контакты.
-                </span>
-              </p>
-              <p>
-                <CheckCheck size={20} />
-                <span>
-                  <strong>Закройте нарушение</strong>Возьмите событие в работу, затем отметьте его устранение.
-                </span>
-              </p>
-              <div className="info-banner">
-                Это интерактивный прототип: видео, сотрудники, контакты и показатели смоделированы. Реальный анализ видео и интеграции не
-                подключены.
-              </div>
-              <Button onClick={() => setModal(null)}>
-                Понятно, начать работу <ArrowRight size={15} />
-              </Button>
-            </div>
-          ) : (
-            <div className="demo-options">
-              {demoOptions.map(({ label, id, icon: Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => {
-                    const source = initialEvents.find((e) => e.id === id)!
-                    const now = new Date().toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour12: false })
-                    const newEvent = { ...source, id: `TK-DEMO-${Date.now().toString().slice(-6)}`, time: now, status: 'new' as const }
-                    setEvents((list) => [newEvent, ...list])
-                    setModal(null)
-                    setFeedUnread(true)
-                    setFeedTab('all')
-                    notify('Новое демособытие добавлено в ленту.')
-                    if (sound) {
-                      try {
-                        const audio = new AudioContext()
-                        const osc = audio.createOscillator()
-                        const gain = audio.createGain()
-                        osc.connect(gain)
-                        gain.connect(audio.destination)
-                        gain.gain.value = 0.06
-                        osc.frequency.value = 660
-                        osc.start()
-                        osc.stop(audio.currentTime + 0.18)
-                        osc.onended = () => {
-                          void audio.close()
-                        }
-                      } catch {
-                        /* Sound is optional. */
-                      }
-                    }
-                  }}
-                >
-                  <Icon size={20} />
-                  <span>{label}</span>
-                  <Plus size={17} />
-                </button>
-              ))}
-            </div>
-          )}
+                <span>{label}</span>
+                <ChevronRight size={16} />
+              </button>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
+
       {toast ? (
-        <div className="toast" role="status">
-          <CircleCheck size={17} />
-          {toast}
-          <button aria-label="Закрыть уведомление" onClick={() => setToast('')}>
-            <X size={14} />
-          </button>
+        <div className="toast" role="status" aria-live="polite">
+          <Sparkles size={15} />
+          <span>{toast}</span>
         </div>
       ) : null}
     </div>
