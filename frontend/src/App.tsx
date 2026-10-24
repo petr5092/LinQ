@@ -208,6 +208,8 @@ function CameraView({
             className="camera-mjpeg-stream"
             src={mjpegUrl}
             alt="Прямой эфир с разметкой нейросети"
+            loading="eager"
+            decoding="sync"
           />
         ) : (
           <video
@@ -217,6 +219,7 @@ function CameraView({
             loop
             muted
             playsInline
+            preload="auto"
           />
         )
       ) : null}

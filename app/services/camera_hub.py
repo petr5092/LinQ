@@ -33,7 +33,12 @@ class CameraHub:
     def set_frame(self, camera_id: str, frame_data: np.ndarray | bytes) -> None:
         """Сохранение свежего кадра камеры для раздачи (принимает BGR numpy-массив или JPEG байты)."""
         if isinstance(frame_data, np.ndarray):
-            success, enc = cv2.imencode(".jpg", frame_data, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            h, w = frame_data.shape[:2]
+            # Масштабирование для сверхбыстрой передачи и мгновенного отображения в браузере
+            if w > 1280:
+                scale = 1280.0 / w
+                frame_data = cv2.resize(frame_data, (1280, int(h * scale)), interpolation=cv2.INTER_AREA)
+            success, enc = cv2.imencode(".jpg", frame_data, [cv2.IMWRITE_JPEG_QUALITY, 75])
             jpeg_bytes = enc.tobytes() if success else b""
         else:
             jpeg_bytes = frame_data

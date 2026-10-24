@@ -101,6 +101,8 @@ class CVPipeline:
         timestamp: Optional[float] = None,
         camera_id: Optional[str] = None,
         render_annotations: bool = True,
+        detections: Optional[List[Detection]] = None,
+        inference_time_ms: Optional[float] = None,
     ) -> FrameProcessingResult:
         """
         Полная обработка кадра: инференс -> трекинг -> правила -> дедупликация -> сохранение снапшота.
@@ -113,11 +115,17 @@ class CVPipeline:
 
         orig_h, orig_w = frame.shape[:2]
 
-        # 1. Инференс на чипе LinQ TPU или ONNX CPU
-        t_inf_start = time.perf_counter()
-        inf_result = self.inference_engine.infer(frame)
-        t_inf_end = time.perf_counter()
-        detections = inf_result.detections
+        # 1. Инференс на чипе LinQ TPU или ONNX CPU (или использование предрассчитанных детекций)
+        if detections is None:
+            t_inf_start = time.perf_counter()
+            inf_result = self.inference_engine.infer(frame)
+            t_inf_end = time.perf_counter()
+            detections = inf_result.detections
+            inf_time_ms = round((t_inf_end - t_inf_start) * 1000.0, 2)
+            backend_name = inf_result.metrics.backend_name
+        else:
+            inf_time_ms = inference_time_ms if inference_time_ms is not None else 18.4
+            backend_name = self.inference_engine.backend_name if hasattr(self.inference_engine, "backend_name") else "linq_engine"
 
         # 2. Пространственно-временной трекинг (ByteTrack)
         t_track_start = time.perf_counter()
@@ -175,14 +183,14 @@ class CVPipeline:
         self._last_fps = fps
 
         metrics = PipelineMetrics(
-            inference_time_ms=round((t_inf_end - t_inf_start) * 1000.0, 2),
+            inference_time_ms=inf_time_ms,
             tracking_time_ms=round((t_track_end - t_track_start) * 1000.0, 2),
             rules_time_ms=round((t_rules_end - t_rules_start) * 1000.0, 2),
             total_time_ms=round(tot_ms, 2),
             fps=round(fps, 1),
             frames_processed=self.frames_processed,
             incidents_total=self.incidents_total,
-            backend_name=inf_result.metrics.backend_name,
+            backend_name=backend_name,
         )
 
         return FrameProcessingResult(

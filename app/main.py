@@ -62,35 +62,49 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[Seed] Предупреждение при проверке начальных данных: {e}")
 
+    # Регистрация цикла событий для WebSocket рассылки
+    import asyncio
+    from app.services.notifier import notifier as ws_notifier
+    ws_notifier.set_loop(asyncio.get_running_loop())
+
     # Запуск фонового менеджера внешних уведомлений
     try:
         notification_manager.start()
     except Exception as e:
         logger.warning(f"[Notify] Предупреждение при запуске службы оповещений: {e}")
 
-    # Запуск фонового CV-воркера для онлайн-камеры CAM-01
+    # Запуск фонового CV-воркера для онлайн-камеры CAM-01 (Xiaomi 360 3 Pro / RTSP / Demo)
     import threading
     stop_cv_event = threading.Event()
-    demo_video_path = str(BASE_DIR / "storage" / "demo_videos" / "construction_safety.mp4")
-    if Path(demo_video_path).exists():
-        try:
-            from run_worker import run_camera_worker
-            cv_thread = threading.Thread(
-                target=run_camera_worker,
-                args=(
-                    "CAM-01",
-                    demo_video_path,
-                    settings.INFERENCE_BACKEND.lower(),
-                    settings.ONNX_MODEL_PATH,
-                    stop_cv_event,
-                ),
-                daemon=True,
-                name="cv_worker_CAM-01",
-            )
-            cv_thread.start()
-            logger.info("[CV Worker] Видеоаналитика нейросети для CAM-01 запущена в реальном времени.")
-        except Exception as e:
-            logger.warning(f"[CV Worker] Ошибка запуска фонового воркера CAM-01: {e}")
+    cam_source = settings.CAMERA_SOURCE
+    is_network_stream = any(cam_source.startswith(proto) for proto in ("rtsp://", "rtsps://", "http://", "https://", "synthetic"))
+    if not is_network_stream:
+        candidate_file = BASE_DIR / cam_source
+        if candidate_file.exists():
+            cam_source = str(candidate_file)
+        else:
+            demo_fallback = BASE_DIR / "storage" / "demo_videos" / "construction_safety.mp4"
+            if demo_fallback.exists():
+                cam_source = str(demo_fallback)
+
+    try:
+        from run_worker import run_camera_worker
+        cv_thread = threading.Thread(
+            target=run_camera_worker,
+            args=(
+                "CAM-01",
+                cam_source,
+                settings.INFERENCE_BACKEND.lower(),
+                settings.ONNX_MODEL_PATH,
+                stop_cv_event,
+            ),
+            daemon=True,
+            name="cv_worker_CAM-01",
+        )
+        cv_thread.start()
+        logger.info(f"[CV Worker] Видеоаналитика нейросети для CAM-01 запущена на источнике '{cam_source}'.")
+    except Exception as e:
+        logger.warning(f"[CV Worker] Ошибка запуска фонового воркера CAM-01: {e}")
 
     yield
 

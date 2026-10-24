@@ -77,7 +77,7 @@ class NotificationManager:
                 "event": {
                     "id": event_id,
                     "status": new_status,
-                    "assigned_to": operator_name,
+                    "assigned_to": f"@{operator_name}" if operator_name and not operator_name.startswith("@") else operator_name,
                 },
             })
         except queue.Full:
@@ -111,10 +111,19 @@ class NotificationManager:
         if self.telegram.token:
             active_subs = self.store.list_subscribers(channel="telegram", active=True)
             snap = snapshot_path
-            if not snap and event.get("image_key"):
-                cand = os.path.join(str(settings.LOCAL_SNAPSHOTS_DIR), str(event["image_key"]))
-                if os.path.isfile(cand):
-                    snap = cand
+            if not snap:
+                for k in ("snapshot_path", "snapshot_url", "image_key"):
+                    val = event.get(k)
+                    if val and isinstance(val, str):
+                        rel = val.replace("/static/snapshots/", "").lstrip("/\\")
+                        for base in (str(settings.LOCAL_SNAPSHOTS_DIR), os.path.join(str(BASE_DIR), "storage", "snapshots")):
+                            cand = os.path.join(base, rel)
+                            if os.path.isfile(cand):
+                                snap = cand
+                                break
+                    if snap:
+                        break
+
             for sub in active_subs:
                 sub_min_sev = SEV_ORDER.get(sub.get("min_severity", "low").lower(), 0)
                 if event_sev_lvl >= sub_min_sev:
@@ -183,23 +192,57 @@ class NotificationManager:
         """Callback от Telegram inline кнопок: сохраняем статус в БД и рассылаем в WS."""
         from app.db.session import SessionLocal
         from app.db.models.incident import Incident
-        from datetime import datetime
+        from sqlalchemy import select
+
+        # Маппинг статусов Telegram в модель БД:
+        # 'confirmed' / 'c' -> status='working', is_verified=True
+        # 'acknowledged' / 'w' -> status='working', is_verified=False
+        # 'false_positive' / 'dismissed' / 'f' -> status='dismissed', is_verified=False
+        # 'resolved' / 'r' -> status='resolved', is_verified=True
+        is_verified = False
+        db_status = "working"
+        if new_status in ("confirmed", "c"):
+            db_status = "working"
+            is_verified = True
+        elif new_status in ("acknowledged", "w", "working"):
+            db_status = "working"
+            is_verified = False
+        elif new_status in ("false_positive", "dismissed", "f"):
+            db_status = "dismissed"
+            is_verified = False
+        elif new_status in ("resolved", "r"):
+            db_status = "resolved"
+            is_verified = True
 
         try:
             with SessionLocal() as db:
-                inc = db.query(Incident).filter(Incident.id == event_id).first()
+                inc = db.scalar(select(Incident).where(Incident.id == event_id))
                 if inc:
-                    inc.status = new_status
-                    if not inc.assigned_to:
-                        inc.assigned_to = f"tg:@{operator_name}"
-                    if new_status == "acknowledged" and not inc.acknowledged_at:
-                        inc.acknowledged_at = datetime.utcnow()
-                    elif new_status in ("resolved", "confirmed") and not inc.resolved_at:
-                        inc.resolved_at = datetime.utcnow()
+                    inc.status = db_status
+                    inc.is_verified = is_verified
+                    if operator_name:
+                        inc.contact_name = f"@{operator_name}"
+                        inc.contact_role = "Оператор (Telegram)"
                     db.commit()
 
-            # Обновляем все Telegram сообщения
-            self.update_incident_status(event_id, new_status, operator_name)
+            # Обновляем все Telegram сообщения (снимаем inline кнопки и обновляем статус)
+            self.update_incident_status(event_id, db_status, operator_name)
+
+            # Широковещательное обновление UI через WebSocket
+            update_payload = {
+                "id": event_id,
+                "status": db_status,
+                "is_verified": is_verified,
+                "contact_name": f"@{operator_name}" if operator_name else None,
+            }
+            ws_notifier.broadcast_sync({
+                "event": "INCIDENT_STATUS_UPDATED",
+                "data": update_payload,
+            })
+            ws_notifier.broadcast_sync({
+                "event": "INCIDENT_STATUS_CHANGED",
+                "data": update_payload,
+            })
         except Exception as e:
             print(f"[NotificationManager] Ошибка синхронизации статуса с БД: {e}")
 

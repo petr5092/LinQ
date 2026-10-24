@@ -90,6 +90,14 @@ class Settings(BaseModel):
     DEBOUNCE_FRAMES: int = Field(default_factory=lambda: int(os.getenv("DEBOUNCE_FRAMES", "15")))
     COOLDOWN_SECONDS: int = Field(default_factory=lambda: int(os.getenv("COOLDOWN_SECONDS", "300")))
 
+    # Камера и видеоисточник
+    CAMERA_SOURCE: str = Field(
+        default_factory=lambda: os.getenv("CAMERA_SOURCE", "storage/demo_videos/construction_safety.mp4")
+    )
+    CAMERA_NAME: str = Field(
+        default_factory=lambda: os.getenv("CAMERA_NAME", "Xiaomi Smart Camera 3 Pro")
+    )
+
     # Telegram & Внешние уведомления
     TELEGRAM_BOT_TOKEN: Optional[str] = Field(default_factory=lambda: os.getenv("LINQ_TG_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN"))
     TELEGRAM_API_BASE: str = Field(default_factory=lambda: os.getenv("LINQ_TG_API") or os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org"))

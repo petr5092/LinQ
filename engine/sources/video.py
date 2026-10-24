@@ -55,10 +55,20 @@ class VideoFileSource(BaseVideoSource):
 
             frame_idx += 1
             if self.realtime:
+                now_perf = time.perf_counter()
                 target_time = t0 + frame_idx / self.fps
-                delay = target_time - time.perf_counter()
+                delay = target_time - now_perf
                 if delay > 0:
                     time.sleep(delay)
+                elif delay < -0.05:
+                    # Синхронизация с реальным временем: быстрый пропуск отставших кадров
+                    frames_behind = int(-delay * self.fps)
+                    if frames_behind > 0:
+                        skip = min(frames_behind, 30)
+                        for _ in range(skip):
+                            if not cap.grab():
+                                break
+                        frame_idx += skip
 
         cap.release()
 
@@ -80,8 +90,12 @@ class RtspSource(BaseVideoSource):
         self.reconnect_delay_s = reconnect_delay_s
 
     def __iter__(self) -> Generator[Tuple[np.ndarray, float], None, None]:
+        # Оптимизация задержки RTSP для OpenCV: TCP транспорт вместо UDP дропов
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+
         while not self._stop:
             cap = cv2.VideoCapture(self.rtsp_url)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             if not cap.isOpened():
                 time.sleep(self.reconnect_delay_s)
                 continue

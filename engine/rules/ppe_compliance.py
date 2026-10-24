@@ -14,6 +14,8 @@ from engine.tracking.types import TrackedObject
 class PPEComplianceRule(BaseRule):
     """
     Контроль ношения СИЗ (каска, жилет) персоналом на производственной площадке.
+    Поддерживает как двухэтапный анализ (человек -> зоны головы/торса -> наличие/отсутствие СИЗ),
+    так и прямое распознавание классов отсутствия СИЗ (no_helmet, no_vest).
     """
 
     def __init__(
@@ -40,15 +42,12 @@ class PPEComplianceRule(BaseRule):
         if not self.is_enabled:
             return []
 
-        persons = [t for t in tracks if t.class_name == "person"]
-        if not persons:
-            return []
-
-        # Извлекаем все детекции текущего кадра из контекста (если доступны)
         all_detections: List[Detection] = getattr(context, "all_detections", [])
-
         violations: List[RuleViolation] = []
+        covered_tracks: set[int] = set()
 
+        # 1. Анализ через треки людей (person)
+        persons = [t for t in tracks if t.class_name == "person"]
         for p in persons:
             head_box = p.bbox.head_box
             torso_box = p.bbox.torso_box
@@ -60,19 +59,24 @@ class PPEComplianceRule(BaseRule):
 
             # Проверяем перекрытие детекций СИЗ с областями тела рабочего
             for det in all_detections:
-                if det.class_name == self.helmet_class:
-                    if head_box.iou(det.bbox) > 0.05 or det.bbox.iou(head_box) > 0.1:
-                        has_helmet = True
-                elif det.class_name == self.no_helmet_class:
-                    if head_box.iou(det.bbox) > 0.05 or det.bbox.iou(head_box) > 0.1:
-                        has_explicit_no_helmet = True
+                inter_w = max(0.0, min(head_box.x2, det.bbox.x2) - max(head_box.x1, det.bbox.x1))
+                inter_h = max(0.0, min(head_box.y2, det.bbox.y2) - max(head_box.y1, det.bbox.y1))
+                head_inter_area = inter_w * inter_h
+                head_overlap = (head_inter_area / max(det.bbox.area, 1.0)) > 0.15 or head_box.iou(det.bbox) > 0.05
 
-                elif det.class_name == self.vest_class:
-                    if torso_box.iou(det.bbox) > 0.05 or det.bbox.iou(torso_box) > 0.1:
-                        has_vest = True
-                elif det.class_name == self.no_vest_class:
-                    if torso_box.iou(det.bbox) > 0.05 or det.bbox.iou(torso_box) > 0.1:
-                        has_explicit_no_vest = True
+                torso_w = max(0.0, min(torso_box.x2, det.bbox.x2) - max(torso_box.x1, det.bbox.x1))
+                torso_h = max(0.0, min(torso_box.y2, det.bbox.y2) - max(torso_box.y1, det.bbox.y1))
+                torso_inter_area = torso_w * torso_h
+                torso_overlap = (torso_inter_area / max(det.bbox.area, 1.0)) > 0.15 or torso_box.iou(det.bbox) > 0.05
+
+                if det.class_name == self.helmet_class and head_overlap:
+                    has_helmet = True
+                elif det.class_name == self.no_helmet_class and head_overlap:
+                    has_explicit_no_helmet = True
+                elif det.class_name == self.vest_class and torso_overlap:
+                    has_vest = True
+                elif det.class_name == self.no_vest_class and torso_overlap:
+                    has_explicit_no_vest = True
 
             # Нарушение по каске
             if self.require_helmet and (has_explicit_no_helmet or (not has_helmet and all_detections)):
@@ -91,6 +95,7 @@ class PPEComplianceRule(BaseRule):
                         metadata={"ppe_type": "helmet", "status": "missing"},
                     )
                 )
+                covered_tracks.add(p.track_id)
 
             # Нарушение по жилету
             if self.require_vest and (has_explicit_no_vest or (not has_vest and all_detections)):
@@ -106,6 +111,43 @@ class PPEComplianceRule(BaseRule):
                         involved_track_ids=[p.track_id],
                         description=desc,
                         bbox=p.bbox,
+                        metadata={"ppe_type": "vest", "status": "missing"},
+                    )
+                )
+                covered_tracks.add(p.track_id)
+
+        # 2. Прямые треки отсутствия СИЗ (когда нейросеть напрямую трекает no_helmet или no_vest)
+        for t in tracks:
+            if t.track_id in covered_tracks:
+                continue
+
+            if self.require_helmet and t.class_name == self.no_helmet_class:
+                violations.append(
+                    RuleViolation(
+                        rule_name=self.name,
+                        rule_id=f"PPE_NO_HELMET_TRACK_{t.track_id}",
+                        severity=self.severity,
+                        timestamp=context.timestamp,
+                        camera_id=context.camera_id,
+                        track_id=t.track_id,
+                        involved_track_ids=[t.track_id],
+                        description=f"Нарушение правил ТБ: обнаружен сотрудник #{t.track_id} без защитной каски",
+                        bbox=t.bbox,
+                        metadata={"ppe_type": "helmet", "status": "missing"},
+                    )
+                )
+            elif self.require_vest and t.class_name == self.no_vest_class:
+                violations.append(
+                    RuleViolation(
+                        rule_name=self.name,
+                        rule_id=f"PPE_NO_VEST_TRACK_{t.track_id}",
+                        severity=self.severity,
+                        timestamp=context.timestamp,
+                        camera_id=context.camera_id,
+                        track_id=t.track_id,
+                        involved_track_ids=[t.track_id],
+                        description=f"Нарушение правил ТБ: обнаружен сотрудник #{t.track_id} без сигнального жилета",
+                        bbox=t.bbox,
                         metadata={"ppe_type": "vest", "status": "missing"},
                     )
                 )

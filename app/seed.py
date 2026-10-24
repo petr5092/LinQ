@@ -40,7 +40,7 @@ SEED_SITES = [
 ]
 
 SEED_CAMERAS = [
-    {"id": "CAM-01", "name": "Сборочный участок", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "construction", "rtsp_url": "/videos/construction_safety.mp4", "online": True},
+    {"id": "CAM-01", "name": "Xiaomi 360° 3 Pro (Сборочный участок)", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "construction", "rtsp_url": "rtsp://127.0.0.1:8554/xiaomi_cam", "online": True},
     {"id": "CAM-02", "name": "Линия сборки", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
     {"id": "CAM-03", "name": "Участок станков", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
     {"id": "CAM-04", "name": "Проход между станками", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},

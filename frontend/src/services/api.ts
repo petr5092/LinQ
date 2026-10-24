@@ -276,10 +276,10 @@ export const api = {
               event?: string
               data?: BackendIncident & { status?: EventStatus }
             }
-            if (payload.event === 'INCIDENT_CREATED' && payload.data) {
+            if ((payload.event === 'INCIDENT_CREATED' || payload.event === 'INCIDENT_NEW') && payload.data) {
               const incident = mapBackendIncidentToSafetyEvent(payload.data)
               onNewIncident(incident)
-            } else if (payload.event === 'INCIDENT_STATUS_UPDATED' && payload.data && payload.data.status) {
+            } else if ((payload.event === 'INCIDENT_STATUS_UPDATED' || payload.event === 'INCIDENT_STATUS_CHANGED') && payload.data && payload.data.status) {
               onStatusUpdate(payload.data.id, payload.data.status)
             }
           } catch {
