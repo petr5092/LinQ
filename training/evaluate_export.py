@@ -25,7 +25,9 @@ def main() -> None:
     model_names = [model.names[i] for i in range(len(model.names))]
     if model_names != report["classes"]:
         raise ValueError(f"Model class order {model_names} != dataset classes {report['classes']}")
-    result = model.val(data=str(args.data.resolve()), split=args.split, imgsz=args.imgsz, device=args.device, plots=True)
+    from training.dataset_config import normalized_data_yaml
+    with normalized_data_yaml(args.data) as normalized:
+        result = model.val(data=str(normalized), split=args.split, imgsz=args.imgsz, device=args.device, plots=True)
     metrics = {"split": args.split, "mAP50": float(result.box.map50),
                "mAP50_95": float(result.box.map), "precision_per_class": result.box.p.tolist(),
                "recall_per_class": result.box.r.tolist(), "classes": report["classes"]}
