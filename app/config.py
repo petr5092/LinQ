@@ -90,5 +90,10 @@ class Settings(BaseModel):
     DEBOUNCE_FRAMES: int = Field(default_factory=lambda: int(os.getenv("DEBOUNCE_FRAMES", "15")))
     COOLDOWN_SECONDS: int = Field(default_factory=lambda: int(os.getenv("COOLDOWN_SECONDS", "300")))
 
+    # Telegram & Внешние уведомления
+    TELEGRAM_BOT_TOKEN: Optional[str] = Field(default_factory=lambda: os.getenv("LINQ_TG_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN"))
+    TELEGRAM_API_BASE: str = Field(default_factory=lambda: os.getenv("LINQ_TG_API") or os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org"))
+    PUBLIC_DASHBOARD_URL: Optional[str] = Field(default_factory=lambda: os.getenv("PUBLIC_DASHBOARD_URL") or os.getenv("LINQ_PUBLIC_URL", "http://localhost:3000"))
+
 
 settings = Settings()

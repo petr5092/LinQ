@@ -31,14 +31,16 @@ def create_inference_engine(
     """
     chosen_backend = (backend or os.getenv("INFERENCE_BACKEND", "ONNX_CPU")).upper().strip()
 
-    if chosen_backend == "LINQ_TPU":
+    if chosen_backend in ("LINQ_TPU", "LINQ", "LINQ_REMOTE"):
         target_path = model_path or os.getenv("TPU_MODEL_PATH", "models/tpu/safety_yolov8_h1m.tpu")
+        remote_url = kwargs.pop("remote_url", os.getenv("LINQ_TPU_URL"))
         return LinQTPUEngine(
             model_path=target_path,
             conf_threshold=conf_threshold,
             iou_threshold=iou_threshold,
             input_size=input_size,
             class_names=class_names,
+            remote_url=remote_url,
             **kwargs,
         )
 

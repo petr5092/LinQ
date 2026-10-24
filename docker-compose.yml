@@ -28,7 +28,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
+      - LINQ_TG_TOKEN=${LINQ_TG_TOKEN:-}
+      - LINQ_PUBLIC_URL=${LINQ_PUBLIC_URL:-http://localhost:3000}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,postgres,backend,minio}
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-linq_safety}
       - INFERENCE_BACKEND=${INFERENCE_BACKEND:-ONNX_CPU}
       - ONNX_MODEL_PATH=models/onnx/safety_yolov8n.onnx
@@ -40,6 +49,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./.env:/app/.env:ro
       - ./storage/snapshots:/app/storage/snapshots
       - ./storage/demo_videos:/app/storage/demo_videos
       - ./data:/app/data

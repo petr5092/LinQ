@@ -37,7 +37,10 @@ def standalone_main():
     ap.add_argument("--no-notifications", action="store_true")
     ap.add_argument("--public-url", help="адрес панели")
     ap.add_argument("--standalone", action="store_true")
+    ap.add_argument("--endpoint", help="URL удаленного LinQ TPU сервиса (например http://10.0.114.5:8080)")
     a, _ = ap.parse_known_args()
+    if a.endpoint:
+        os.environ["LINQ_TPU_URL"] = a.endpoint
 
     if a.demo_video:
         specs = [os.path.join("storage", "demo_videos", "construction_safety.mp4")]

@@ -1,6 +1,42 @@
 import type { Camera, EventStatus, SafetyEvent, Severity, Site, SiteId } from '../data'
 import { cameras as mockCameras, sites as mockSites } from '../data'
 
+export interface TelegramLinks {
+  group: string | null
+  channel: string | null
+  private: string | null
+}
+
+export interface TelegramChannelInfo {
+  configured: boolean
+  status: string
+  error: string | null
+  username: string | null
+  links: TelegramLinks
+}
+
+export interface NotificationSubscriber {
+  id: number
+  channel: string
+  chat_id: string
+  title: string | null
+  kind: string | null
+  min_severity: string
+  active: number
+  added_by?: string | null
+  added_ts?: number | null
+}
+
+export interface NotificationsStatusResponse {
+  telegram: TelegramChannelInfo
+  netio: {
+    configured: boolean
+  }
+  subscribers: NotificationSubscriber[]
+  stats: Record<string, any>
+}
+
+
 const API_BASE = '/api/v1'
 
 interface BackendEmployee {
@@ -279,4 +315,41 @@ export const api = {
       if (ws) ws.close()
     }
   },
+
+  async getNotificationsStatus(): Promise<NotificationsStatusResponse | null> {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/status`)
+      if (!res.ok) return null
+      return (await res.json()) as NotificationsStatusResponse
+    } catch {
+      return null
+    }
+  },
+
+  async sendTestNotification(subscriberId?: number): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriber_id: subscriberId }),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  },
+
+  async updateSubscriber(subscriberId: number, data: { min_severity?: string; active?: boolean; delete?: boolean }): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/subscribers/${subscriberId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  },
+
 }

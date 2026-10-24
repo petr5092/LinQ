@@ -30,19 +30,21 @@ def percentile(data: list[float], p: float) -> float:
 
 def main():
     parser = argparse.ArgumentParser(description="Бенчмарк инференса LinQ TPU / ONNX Runtime")
-    parser.add_argument("--backend", default="mock", choices=["mock", "onnx", "linq", "onnx_cpu", "linq_tpu"],
+    parser.add_argument("--backend", default="mock", choices=["mock", "onnx", "linq", "onnx_cpu", "linq_tpu", "linq_remote"],
                         help="Бэкенд вычислений (linq = LinQ TPU H1M, onnx = ONNX Runtime CPU, mock = эмуляция)")
     parser.add_argument("--model", default=None, help="Путь к файлу скомпилированной модели (.tpu или .onnx)")
     parser.add_argument("--frames", type=int, default=200, help="Количество кадров для тестового прогона")
     parser.add_argument("--warmup", type=int, default=10, help="Количество кадров прогрева")
     parser.add_argument("--target-fps", type=float, default=10.0, help="Целевая частота кадров на одну камеру")
     parser.add_argument("--out", default="bench_results.json", help="Путь к результирующему JSON-файлу")
+    parser.add_argument("--endpoint", default=None, help="URL удаленного LinQ TPU сервиса (например http://10.0.114.5:8080)")
     args = parser.parse_args()
 
     # Нормализуем имя бэкенда для фабрики
     backend_map = {
         "linq": "linq_tpu",
         "linq_tpu": "linq_tpu",
+        "linq_remote": "linq_remote",
         "onnx": "onnx_cpu",
         "onnx_cpu": "onnx_cpu",
         "mock": "mock",
@@ -53,6 +55,7 @@ def main():
     engine = create_inference_engine(
         backend=backend_name,
         model_path=args.model,
+        remote_url=args.endpoint,
     )
 
     print(f"Генерация синтетических тестовых кадров (прогрев: {args.warmup}, замер: {args.frames})...")

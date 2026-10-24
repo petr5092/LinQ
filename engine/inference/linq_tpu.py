@@ -44,6 +44,7 @@ class LinQTPUEngine(BaseInferenceEngine):
         device_index: int = 0,
         input_node_name: str = "images",
         output_node_name: str = "output0",
+        remote_url: Optional[str] = None,
     ) -> None:
         super().__init__(
             model_path=model_path,
@@ -56,10 +57,12 @@ class LinQTPUEngine(BaseInferenceEngine):
         self.input_node_name = input_node_name
         self.output_node_name = output_node_name
 
+        self.remote_url = remote_url or os.getenv("LINQ_TPU_URL")
         self._tpu_device = None
         self._tpu_program = None
         self._inference_session = None
         self.is_emulated: bool = False
+        self.is_remote: bool = False
 
         if self.model_path:
             self.load()
@@ -70,6 +73,21 @@ class LinQTPUEngine(BaseInferenceEngine):
             raise ValueError("[LinQTPUEngine] Путь к TPU-программе (.tpu) не указан.")
 
         self.model_path = path
+
+        # Проверка удаленного подключения к TPU сервису по VPN
+        if self.remote_url:
+            try:
+                import urllib.request
+                health_req = urllib.request.Request(f"{self.remote_url.rstrip('/')}/health", headers={"User-Agent": "LinQTPU/1.0"})
+                with urllib.request.urlopen(health_req, timeout=2.0) as resp:
+                    if resp.status == 200:
+                        self.is_remote = True
+                        self.is_emulated = False
+                        self.is_loaded = True
+                        print(f"[LinQTPUEngine] Подключено к удаленному LinQ TPU сервису: {self.remote_url}")
+                        return
+            except Exception as e:
+                print(f"[LinQTPUEngine] Удаленный TPU {self.remote_url} недоступен: {e}. Проверка локального устройства...")
 
         # Проверка доступности физического устройства LinQ TPU
         if HAS_PYTPU:
@@ -276,10 +294,24 @@ class LinQTPUEngine(BaseInferenceEngine):
             # Аппаратный инференс на плате LinQ TPU через драйвер pytpu
             input_dict = {self.input_node_name: tensor}
             raw_output = self._inference_session.run(input_dict)
+        elif self.is_remote and self.remote_url:
+            # Инференс через удаленный сервис LinQ TPU по VPN
+            import urllib.request
+            post_req = urllib.request.Request(
+                f"{self.remote_url.rstrip('/')}/infer_raw",
+                data=tensor.tobytes(),
+                headers={"Content-Type": "application/octet-stream", "User-Agent": "LinQTPU/1.0"}
+            )
+            with urllib.request.urlopen(post_req, timeout=10.0) as resp:
+                resp_bytes = resp.read()
+                raw_output = np.frombuffer(resp_bytes, dtype=np.float32)
+                nc = len(self.class_names)
+                if raw_output.size == 1 * (4 + nc) * 8400:
+                    raw_output = raw_output.reshape((1, 4 + nc, 8400))
         else:
             # Эмуляция вывода с типичной задержкой чипа LinQ TPU H1M (~12-18 мс)
             time.sleep(0.015)
-            # Возвращаем пустую структуру для постпроцессинга
+            # Возвращаем структуру для постпроцессинга
             raw_output = np.zeros((1, 4 + len(self.class_names), 84), dtype=np.float32)
 
         t2 = time.perf_counter()
@@ -298,7 +330,7 @@ class LinQTPUEngine(BaseInferenceEngine):
             postprocess_time_ms=round(post_ms, 2),
             total_time_ms=round(tot_ms, 2),
             fps=round(fps, 1),
-            backend_name="LinQ_TPU_H1M" + ("_Emulated" if self.is_emulated else ""),
+            backend_name="LinQ_TPU_H1M" + ("_Remote" if self.is_remote else ("_Emulated" if self.is_emulated else "")),
         )
 
         return InferenceResult(

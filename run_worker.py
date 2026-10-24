@@ -164,14 +164,17 @@ def run_camera_worker(
 def main():
     parser = argparse.ArgumentParser(description="Запуск CV Worker аналитики ТБ LinQ Safety Guard")
     parser.add_argument("--source", action="append", help="Источник видео (synthetic, synthetic:30, rtsp://..., файл.mp4)")
-    parser.add_argument("--backend", default=None, choices=["linq_tpu", "onnx_cpu", "mock"],
+    parser.add_argument("--backend", default=None, choices=["linq_tpu", "linq_remote", "onnx_cpu", "mock"],
                         help="Вычислительный бэкенд инференса (по умолчанию из .env)")
     parser.add_argument("--model", default=None, help="Путь к файлу нейросети (.tpu или .onnx)")
+    parser.add_argument("--endpoint", default=None, help="URL удаленного сервиса LinQ TPU (например http://10.0.114.5:8080)")
     parser.add_argument("--demo-video", action="store_true", help="использовать видео из storage/demo_videos/construction_safety.mp4")
     parser.add_argument("--web", action="store_true", help="Запустить веб-сервер FastAPI параллельно с воркером")
     parser.add_argument("--port", type=int, default=8000, help="Порт веб-сервера")
     args = parser.parse_args()
 
+    if args.endpoint:
+        os.environ["LINQ_TPU_URL"] = args.endpoint
     backend = args.backend or settings.INFERENCE_BACKEND.lower()
     model = args.model or (settings.TPU_MODEL_PATH if "tpu" in backend else settings.ONNX_MODEL_PATH)
     if args.demo_video:

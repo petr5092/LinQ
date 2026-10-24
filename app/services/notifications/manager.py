@@ -30,7 +30,7 @@ class NotificationManager:
         # Инициализация Telegram
         tg_token = getattr(settings, "TELEGRAM_BOT_TOKEN", None) or os.getenv("LINQ_TG_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
         tg_base = getattr(settings, "TELEGRAM_API_BASE", "https://api.telegram.org")
-        pub_url = getattr(settings, "PUBLIC_DASHBOARD_URL", None) or os.getenv("PUBLIC_DASHBOARD_URL")
+        pub_url = getattr(settings, "PUBLIC_DASHBOARD_URL", None) or os.getenv("PUBLIC_DASHBOARD_URL") or os.getenv("LINQ_PUBLIC_URL", "http://localhost:3000")
 
         self.telegram = TelegramClient(
             token=tg_token or "",
@@ -110,10 +110,15 @@ class NotificationManager:
         # Рассылка по активным Telegram-подписчикам
         if self.telegram.token:
             active_subs = self.store.list_subscribers(channel="telegram", active=True)
+            snap = snapshot_path
+            if not snap and event.get("image_key"):
+                cand = os.path.join(str(settings.LOCAL_SNAPSHOTS_DIR), str(event["image_key"]))
+                if os.path.isfile(cand):
+                    snap = cand
             for sub in active_subs:
                 sub_min_sev = SEV_ORDER.get(sub.get("min_severity", "low").lower(), 0)
                 if event_sev_lvl >= sub_min_sev:
-                    self._send_with_retry(self.telegram, sub, event, snapshot_path)
+                    self._send_with_retry(self.telegram, sub, event, snap)
 
     def _send_with_retry(
         self,

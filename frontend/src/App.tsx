@@ -46,6 +46,9 @@ import {
   VolumeX,
   Warehouse,
   X,
+  Send,
+  Trash2,
+  Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -218,6 +221,14 @@ function CameraView({
         )
       ) : null}
 
+      {mode === 'snapshot' && latestSnapshotUrl ? (
+        <img
+          className="camera-snapshot-img"
+          src={latestSnapshotUrl}
+          alt="Последний скриншот LinQ TPU / ONNX Stream"
+        />
+      ) : null}
+
       <div className="camera-tint" />
 
       {/* Top overlay badges */}
@@ -237,7 +248,7 @@ function CameraView({
       </div>
 
       {/* Real-time neural network detection overlays */}
-      {showBoxes && online && (
+      {showBoxes && online && !latestSnapshotUrl && (
         <>
           {mode === 'snapshot' && active ? (
             <div
@@ -404,7 +415,6 @@ export default function App() {
   const [isLiveBackend, setIsLiveBackend] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [inspectedCamera, setInspectedCamera] = useState<Camera | null>(null)
-  const [streamMode, setStreamMode] = useState<'mjpeg' | 'overlay'>('overlay')
   const [zone, setZone] = useState('all')
   const [siteId, setSiteId] = useState<SiteId>('north')
   const [workshop, setWorkshop] = useState('all')
@@ -414,7 +424,9 @@ export default function App() {
   const [status, setStatus] = useState('all')
   const [period, setPeriod] = useState('today')
   const [view, setView] = useState('grid')
-  const [mapView, setMapView] = useState(false)
+  const [overviewTab, setOverviewTab] = useState<'snapshot' | 'cameras' | 'map'>('snapshot')
+  const [snapshotTimestamp, setSnapshotTimestamp] = useState<number>(() => Date.now())
+  const setMapView = (v: boolean) => setOverviewTab(v ? 'map' : 'cameras')
   const [feedTab, setFeedTab] = useState('all')
   const [feedUnread, setFeedUnread] = useState(true)
   const [seen, setSeen] = useState<string[]>([])
@@ -423,6 +435,44 @@ export default function App() {
   const [modal, setModal] = useState<'help' | 'demo' | null>(null)
   const [toast, setToast] = useState('')
   const [showBoxes, setShowBoxes] = useState(true)
+  const [notifyStatus, setNotifyStatus] = useState<any>(null)
+  const [testSending, setTestSending] = useState(false)
+
+  useEffect(() => {
+    if (page === 'settings') {
+      api.getNotificationsStatus().then((res) => {
+        if (res) setNotifyStatus(res)
+      })
+    }
+  }, [page])
+
+  const handleSendTest = async (subscriberId?: number) => {
+    setTestSending(true)
+    const ok = await api.sendTestNotification(subscriberId)
+    setTestSending(false)
+    if (ok) {
+      notify('Тестовое уведомление отправлено!')
+      api.getNotificationsStatus().then(setNotifyStatus)
+    } else {
+      notify('Ошибка отправки. Проверьте статус бота.')
+    }
+  }
+
+  const handleUpdateSubscriber = async (subId: number, min_severity: string) => {
+    const ok = await api.updateSubscriber(subId, { min_severity })
+    if (ok) {
+      notify('Порог фильтрации обновлен.')
+      api.getNotificationsStatus().then(setNotifyStatus)
+    }
+  }
+
+  const handleDeleteSubscriber = async (subId: number) => {
+    const ok = await api.updateSubscriber(subId, { delete: true })
+    if (ok) {
+      notify('Подписчик удален.')
+      api.getNotificationsStatus().then(setNotifyStatus)
+    }
+  }
   const [playing, setPlaying] = useState(false)
   const [rulesEnabled, setRulesEnabled] = useState<Record<string, boolean>>({})
   const activeSite = sites.find((site) => site.id === siteId) ?? sites[0]
@@ -702,6 +752,14 @@ export default function App() {
           <p>Контроль в реальном времени</p>
         </div>
         <div className="section-heading-actions">
+          <button
+            className={`snapshot-toggle-btn ${overviewTab === 'snapshot' ? 'active' : ''}`}
+            onClick={() => setOverviewTab(overviewTab === 'snapshot' ? 'cameras' : 'snapshot')}
+            title="Показать последний скриншот"
+          >
+            <CameraIcon size={14} />
+            <span>Последний скрин</span>
+          </button>
           <span className="live-text">
             <i /> Прямой эфир
           </span>
@@ -758,8 +816,8 @@ export default function App() {
                   video={camera.video}
                   online={camera.online}
                   showBoxes={showBoxes}
-                  mode={page === 'overview' ? 'snapshot' : 'live'}
-                  latestSnapshotUrl={camera.id === 'CAM-01' && isLiveBackend ? '/api/v1/cameras/CAM-01/frame.jpg' : undefined}
+                  mode={page === 'overview' && overviewTab === 'snapshot' ? 'snapshot' : 'live'}
+                  latestSnapshotUrl={camera.id === 'CAM-01' ? `/api/v1/cameras/CAM-01/frame.jpg?t=${snapshotTimestamp}` : undefined}
                 />
                 <span className="expand-camera">
                   <Maximize2 size={16} />
@@ -896,8 +954,8 @@ export default function App() {
       </div>
     </div>
   )
-  const latestIncident = siteEvents.find(isOpen) || siteEvents[0]
-  const latestCam = siteCameras.find((c) => c.id === latestIncident?.camera) || siteCameras[0]
+    const latestCam = siteCameras.find((c) => c.id === 'CAM-01') || siteCameras[0]
+  const latestIncident = siteEvents.find((e) => e.camera === latestCam?.id) || siteEvents.find(isOpen) || siteEvents[0]
 
   const latestSnapshotHero = (
     <div className="latest-snapshot-hero">
@@ -918,35 +976,41 @@ export default function App() {
           online={latestCam?.online}
           showBoxes={showBoxes}
           mode="snapshot"
-          latestSnapshotUrl={latestCam?.id === 'CAM-01' && isLiveBackend ? '/api/v1/cameras/CAM-01/frame.jpg' : undefined}
+          latestSnapshotUrl={`/api/v1/cameras/CAM-01/frame.jpg?t=${snapshotTimestamp}`}
         />
         <span className="expand-camera" style={{ opacity: 0.9 }}>
           <Maximize2 size={18} />
         </span>
       </div>
       <div className="latest-snapshot-info">
-        <div className="latest-snapshot-badge">
-          <CameraIcon size={13} /> Последний скриншот системы безопасности
+        <div className="latest-snapshot-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <CameraIcon size={13} />
+          <span>Последний скриншот системы безопасности · LinQ TPU / ONNX Stream</span>
+          <span className="small-dot green" style={{ width: '6px', height: '6px' }} />
         </div>
         <div className="latest-snapshot-title">
-          {latestIncident?.title ?? 'Контроль соблюдения правил безопасности'}
+          {latestCam?.name} — Стоп-кадр нейросетевого потока
         </div>
         <div className="latest-snapshot-meta">
+          <div>
+            <span>Источник кадра:</span>
+            <strong style={{ color: '#2563eb' }}>LinQ TPU / ONNX Stream</strong>
+          </div>
           <div>
             <span>Камера:</span>
             <strong>{latestCam?.name} ({latestCam?.id})</strong>
           </div>
           <div>
             <span>Участок / Зона:</span>
-            <strong>{latestIncident?.zone ?? latestCam?.zone}</strong>
+            <strong>{latestCam?.workshop} · {latestCam?.zone}</strong>
           </div>
           <div>
             <span>Время стоп-кадра:</span>
             <strong>23.10.2026 {latestIncident?.time ?? '14:32:08'}</strong>
           </div>
           <div>
-            <span>Нейросеть (LinQ AI):</span>
-            <strong style={{ color: '#15803d' }}>YOLOv8n · Точность 98%</strong>
+            <span>Модель нейросети:</span>
+            <strong style={{ color: '#15803d' }}>YOLOv8n PPE · LinQ TPU (H1M) / LocalONNX</strong>
           </div>
         </div>
         <div className="latest-snapshot-actions">
@@ -956,7 +1020,17 @@ export default function App() {
               if (latestCam) setInspectedCamera(latestCam)
             }}
           >
-            <Play size={15} /> Войти в камеру · Живая разметка нейросети
+            <Play size={15} /> Войти в камеру · Прямой эфир 30 FPS
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSnapshotTimestamp(Date.now())
+              notify('Свежий стоп-кадр из LinQ TPU / ONNX Stream зафиксирован.')
+            }}
+          >
+            <CameraIcon size={14} /> Обновить скрин из LinQ TPU
           </Button>
           {latestIncident && (
             <Button
@@ -964,7 +1038,7 @@ export default function App() {
               size="sm"
               onClick={() => setSelectedId(latestIncident.id)}
             >
-              <TriangleAlert size={14} /> Карточка события
+              Инцидент {latestIncident.id}
             </Button>
           )}
         </div>
@@ -1099,17 +1173,38 @@ export default function App() {
             <>
               {stats}
               <div className="overview-tabs">
-                <button className={!mapView ? 'active' : ''} onClick={() => setMapView(false)}>
+                <button
+                  className={overviewTab === 'snapshot' ? 'active' : ''}
+                  onClick={() => setOverviewTab('snapshot')}
+                >
+                  <CameraIcon size={16} /> Последний скрин
+                </button>
+                <button
+                  className={overviewTab === 'cameras' ? 'active' : ''}
+                  onClick={() => setOverviewTab('cameras')}
+                >
                   <Video size={16} /> Камеры
                 </button>
-                <button className={mapView ? 'active' : ''} onClick={() => setMapView(true)}>
+                <button
+                  className={overviewTab === 'map' ? 'active' : ''}
+                  onClick={() => setOverviewTab('map')}
+                >
                   <Map size={16} /> Карта объекта
                 </button>
                 <span>
                   <ShieldCheck size={13} /> Система работает штатно
                 </span>
               </div>
-              {mapView ? map : (<>{latestSnapshotHero}{cameraGrid}</>)}
+              {overviewTab === 'map' ? (
+                map
+              ) : overviewTab === 'snapshot' ? (
+                <>
+                  {latestSnapshotHero}
+                  {cameraGrid}
+                </>
+              ) : (
+                cameraGrid
+              )}
               <section className="recent-events">
                 <div className="section-heading">
                   <div>
@@ -1352,7 +1447,145 @@ export default function App() {
           {page === 'settings' ? (
             <>
               <section className="settings-card">
-                <h2>Уведомления</h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <h2>Telegram-бот оперативных оповещений</h2>
+                    <p style={{ color: 'var(--subtle)', fontSize: 12 }}>
+                      Мгновенная доставка стоп-кадров нарушений в личные и групповые чаты дежурных смен
+                    </p>
+                  </div>
+                  {notifyStatus?.telegram?.status === 'online' ? (
+                    <span className="connected" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                      <Check size={14} color="#16a34a" /> @{notifyStatus.telegram.username || 'linq_safety_bot'} в сети
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--subtle)', fontSize: 11 }}>
+                      {notifyStatus?.telegram?.status === 'starting' ? 'Запуск long polling...' : (notifyStatus?.telegram?.status || 'Проверка связи...')}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+                  {notifyStatus?.telegram?.links?.private && (
+                    <a
+                      href={notifyStatus.telegram.links.private}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '7px 12px',
+                        background: '#e9f1fc',
+                        color: '#2072d0',
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      <Send size={13} /> Подключить личные сообщения
+                    </a>
+                  )}
+                  {notifyStatus?.telegram?.links?.group && (
+                    <a
+                      href={notifyStatus.telegram.links.group}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '7px 12px',
+                        background: '#f0f1f3',
+                        color: '#374151',
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      <Users size={13} /> Добавить в группу смены
+                    </a>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={testSending || notifyStatus?.telegram?.status !== 'online'}
+                    onClick={() => handleSendTest()}
+                    style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}
+                  >
+                    <BellRing size={13} />
+                    {testSending ? 'Отправка...' : 'Отправить тестовое оповещение'}
+                  </Button>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <strong style={{ fontSize: 13 }}>Подключенные чаты ({notifyStatus?.subscribers?.length || 0})</strong>
+                    <button
+                      onClick={() => api.getNotificationsStatus().then(setNotifyStatus)}
+                      style={{ background: 'none', border: 'none', color: 'var(--blue)', fontSize: 11, cursor: 'pointer' }}
+                    >
+                      Обновить
+                    </button>
+                  </div>
+
+                  {notifyStatus?.subscribers && notifyStatus.subscribers.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {notifyStatus.subscribers.map((sub: any) => (
+                        <div
+                          key={sub.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            background: '#f8fafc',
+                            borderRadius: 6,
+                            border: '1px solid #e2e8f0',
+                            fontSize: 12,
+                          }}
+                        >
+                          <div>
+                            <b>{sub.title || `Чат ${sub.chat_id}`}</b>
+                            <span style={{ color: 'var(--subtle)', marginLeft: 8, fontSize: 11 }}>
+                              {sub.kind === 'private' ? 'личный' : sub.kind} · ID: {sub.chat_id}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <label style={{ fontSize: 11, color: 'var(--subtle)' }}>Порог:</label>
+                            <select
+                              value={sub.min_severity}
+                              onChange={(e) => handleUpdateSubscriber(sub.id, e.target.value)}
+                              style={{ padding: '3px 6px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 11 }}
+                            >
+                              <option value="low">Все (low)</option>
+                              <option value="medium">Средний (medium)</option>
+                              <option value="high">Высокий (high)</option>
+                              <option value="critical">Критический (critical)</option>
+                            </select>
+                            <button
+                              onClick={() => handleDeleteSubscriber(sub.id)}
+                              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}
+                              title="Удалить подписчика"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '12px 14px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', fontSize: 12, color: 'var(--subtle)' }}>
+                      Чаты подключаются автоматически: перейдите по ссылке выше и отправьте боту <code>/start</code> в личке или добавьте в групповой чат дежурной смены.
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="settings-card">
+                <h2>Оповещения в браузере</h2>
                 <div className="setting-row">
                   <div>
                     <strong>Звуковые оповещения</strong>
@@ -1535,8 +1768,7 @@ export default function App() {
         onOpenChange={(open) => {
           if (!open) {
             setInspectedCamera(null)
-            setStreamMode('overlay')
-          }
+            }
         }}
       >
         <DialogContent className="event-dialog" style={{ maxWidth: '980px', width: '95vw' }}>
@@ -1549,18 +1781,10 @@ export default function App() {
                   </span>
                   {isLiveBackend && inspectedCamera.id === 'CAM-01' && (
                     <div className="stream-source-switch">
-                      <button
-                        className={`stream-source-btn ${streamMode === 'mjpeg' ? 'active' : ''}`}
-                        onClick={() => setStreamMode('mjpeg')}
-                      >
+                      <span className="stream-source-btn active" style={{ cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                        <span className="small-dot green" style={{ width: '6px', height: '6px' }} />
                         LinQ TPU / ONNX Stream
-                      </button>
-                      <button
-                        className={`stream-source-btn ${streamMode === 'overlay' ? 'active' : ''}`}
-                        onClick={() => setStreamMode('overlay')}
-                      >
-                        HD AI Overlay
-                      </button>
+                      </span>
                     </div>
                   )}
                 </div>
@@ -1582,7 +1806,7 @@ export default function App() {
                   large={true}
                   showBoxes={showBoxes}
                   mode="live"
-                  useMjpeg={streamMode === 'mjpeg' && isLiveBackend && inspectedCamera.id === 'CAM-01'}
+                  useMjpeg={isLiveBackend && inspectedCamera.id === 'CAM-01'}
                   mjpegUrl="/api/v1/cameras/CAM-01/stream"
                 />
 
@@ -1620,7 +1844,8 @@ export default function App() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      notify(`Свежий стоп-кадр с камеры ${inspectedCamera.id} зафиксирован на главном экране.`)
+                      setSnapshotTimestamp(Date.now())
+                      notify(`Свежий стоп-кадр с камеры ${inspectedCamera.id} из LinQ TPU / ONNX Stream зафиксирован на главном экране.`)
                     }}
                   >
                     <CameraIcon size={14} /> Сделать скриншот
