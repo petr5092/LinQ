@@ -113,6 +113,8 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("=== Остановка LinQ Safety Guard Backend ===")
+    from app.services.browser_camera import close_browser_camera_pipelines
+    close_browser_camera_pipelines()
     try:
         stop_cv_event.set()
     except Exception:

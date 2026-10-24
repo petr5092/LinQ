@@ -118,6 +118,65 @@ def test_cv_api_rejects_bad_jpeg(cv_api):
     assert cv_api[0].post('/api/v1/worker/incidents', json=data).status_code == 422
 
 
+def test_browser_camera_requires_registered_camera_and_jpeg(cv_api):
+    client = cv_api[0]
+    assert client.post(
+        '/api/v1/worker/browser-frame/unknown',
+        content=b'frame',
+        headers={'Content-Type': 'image/jpeg'},
+    ).status_code == 404
+    assert client.post(
+        '/api/v1/worker/browser-frame/CAM-01',
+        content=b'frame',
+        headers={'Content-Type': 'image/png'},
+    ).status_code == 415
+
+
+def test_browser_camera_frame_returns_detection_payload(cv_api, monkeypatch):
+    from app.routes import worker
+
+    expected = {
+        'camera_id': 'CAM-01',
+        'width': 100,
+        'height': 80,
+        'detections': [],
+        'violations': [],
+        'new_incidents': [],
+        'metrics': {'backend': 'ONNX_CPU', 'inference_ms': 12.0, 'fps': 4.0},
+    }
+    monkeypatch.setattr(worker, 'process_browser_frame', lambda _camera, _jpeg: expected)
+    frame = np.zeros((80, 100, 3), np.uint8)
+    ok, jpeg = cv2.imencode('.jpg', frame)
+    assert ok
+    response = cv_api[0].post(
+        '/api/v1/worker/browser-frame/CAM-01',
+        content=jpeg.tobytes(),
+        headers={'Content-Type': 'image/jpeg'},
+    )
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+def test_browser_camera_configuration_error_is_returned_to_client(cv_api, monkeypatch):
+    from app.routes import worker
+
+    monkeypatch.setattr(
+        worker,
+        'process_browser_frame',
+        Mock(side_effect=worker.BrowserCameraConfigurationError('ONNX model is unavailable')),
+    )
+    frame = np.zeros((80, 100, 3), np.uint8)
+    ok, jpeg = cv2.imencode('.jpg', frame)
+    assert ok
+    response = cv_api[0].post(
+        '/api/v1/worker/browser-frame/CAM-01',
+        content=jpeg.tobytes(),
+        headers={'Content-Type': 'image/jpeg'},
+    )
+    assert response.status_code == 409
+    assert response.json()['detail'] == 'ONNX model is unavailable'
+
+
 def test_outbox_retains_failure_and_removes_only_after_success(tmp_path, monkeypatch):
     from engine import incident_client
     sink = IncidentClient('http://example.invalid/api/v1', tmp_path)

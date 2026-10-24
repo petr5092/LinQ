@@ -100,6 +100,7 @@ import {
 } from 'lucide-react'
 
 import { FacilityMap } from './components/facility-map'
+import { BrowserCameraPanel } from './components/browser-camera-panel'
 
 import { Button } from '@/components/ui/button'
 
@@ -2587,7 +2588,12 @@ useEffect(() => {
 
           ) : null}
 
-          {page === 'cameras' ? <>{cameraGrid}</> : null}
+          {page === 'cameras' ? (
+            <>
+              <BrowserCameraPanel cameras={siteCameras} siteId={siteId} />
+              {cameraGrid}
+            </>
+          ) : null}
 
           {page === 'events' ? (
 
