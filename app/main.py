@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.engine import make_url
 
 from app.config import settings, BASE_DIR
 from app.db.session import check_db_connection
@@ -35,7 +36,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"Режим отладки (DEBUG): {settings.DEBUG}")
     logger.info(f"Бэкенд инференса: {settings.INFERENCE_BACKEND}")
     logger.info(f"Тип хранилища снапшотов: {settings.STORAGE_TYPE}")
-    logger.info(f"Подключение к БД: {settings.DATABASE_URL}")
+    database_url = make_url(settings.DATABASE_URL).render_as_string(hide_password=True)
+    logger.info(f"Подключение к БД: {database_url}")
 
     # Проверка базы данных
     if check_db_connection():
