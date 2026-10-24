@@ -25,6 +25,7 @@
   * *Debounce*: фиксация события только при устойчивом нарушении в течение $N$ кадров;
   * *Cooldown*: одно длящееся нарушение порождает ровно одно системное оповещение, а не лавину сообщений на каждом кадре.
   * Повторные фиксации одного типа нарушения на той же камере в течение 5 минут обновляют существующую открытую запись журнала и исходное сообщение Telegram (включая standalone-режим); после закрытия события или паузы более 5 минут создаётся новый инцидент.
+* **Расширение каналов оповещения**: IT-команда клиента может подключить корпоративный мессенджер Python-адаптером, наследующим `BaseMessengerAdapter`, без изменений ядра.
 * **Операторский веб-интерфейс**:
   * Real-time видеомониторинг с оверлеем боксов и цветовой индикацией зон;
   * Интерактивный редактор полигонов зон прямо на кадре камеры;
@@ -51,6 +52,50 @@
 ```
 
 ---
+
+## Интеграция корпоративного мессенджера
+
+Создайте Python-модуль и унаследуйте адаптер от `BaseMessengerAdapter`. Реализуйте отправку нового инцидента и обновление уже отправленного сообщения: последнее используется при повторной фиксации нарушения и смене статуса.
+
+```python
+import os
+from app.services.notifications import BaseMessengerAdapter
+
+
+class CompanyMessenger(BaseMessengerAdapter):
+    channel = "company_chat"
+
+    def __init__(self, manager):
+        self.endpoint = os.environ["COMPANY_MESSENGER_ENDPOINT"]
+        self.api_key = os.environ["COMPANY_MESSENGER_API_KEY"]
+
+    def send_alert(self, subscriber, event, snapshot_path=None):
+        # Вызовите API мессенджера и верните (ID сообщения, тип сообщения).
+        # subscriber["chat_id"] — ID чата, event — данные инцидента.
+        raise NotImplementedError("Реализуйте отправку сообщения через API мессенджера")
+
+    def update_alert(self, delivery, event):
+        # Обновите delivery["message_id"], не отправляя новое оповещение.
+        raise NotImplementedError("Реализуйте обновление сообщения через API мессенджера")
+
+
+def create_adapter(manager):
+    adapter = CompanyMessenger(manager)
+    manager.store.upsert_subscriber(
+        adapter.channel, "safety-team", "Служба ОТ и ТБ", "channel"
+    )
+    return adapter
+```
+
+Установите пакет расширения в окружение backend и укажите фабрику в `.env`:
+
+```dotenv
+LINQ_MESSENGER_ADAPTERS=company_plugin:create_adapter
+COMPANY_MESSENGER_ENDPOINT=https://messenger.example/api
+COMPANY_MESSENGER_API_KEY=<секрет из хранилища секретов>
+```
+
+Можно указать несколько фабрик через запятую. Каждая фабрика получает `NotificationManager` и возвращает экземпляр `BaseMessengerAdapter`. Адаптеры запускаются и останавливаются вместе с backend; общий менеджер применяет фильтр важности, ведёт журнал доставок и передаёт обновления. Используйте `manager.store.upsert_subscriber(...)` для регистрации получателей. Плагин выполняется с правами backend: подключайте только доверенный код, а ключи храните в переменных окружения, не в репозитории.
 
 ## 🚀 Быстрый старт
 

@@ -12,6 +12,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.services.notifications.base import BaseMessengerAdapter
 from app.services.notifications.netio import ApiError, post_json, post_multipart
 from app.services.notifications.store import NotificationStore
 
@@ -28,7 +29,7 @@ STATUS_TEXT = {
 }
 
 
-class TelegramClient:
+class TelegramClient(BaseMessengerAdapter):
     channel = "telegram"
 
     def __init__(
@@ -50,6 +51,10 @@ class TelegramClient:
         self.error: Optional[str] = None
         self._stop: bool = False
         self._thread: Optional[threading.Thread] = None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.token)
 
     def start(self) -> None:
         if not self.token:
