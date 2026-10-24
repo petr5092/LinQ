@@ -36,6 +36,33 @@ export interface NotificationsStatusResponse {
   stats: Record<string, any>
 }
 
+export interface AnalyticsSummary {
+  date: string
+  incidents: {
+    total: number
+    active: number
+    new: number
+    working: number
+    resolved: number
+    dismissed: number
+  }
+  severity: {
+    critical: number
+    warning: number
+    info: number
+  }
+  cameras: {
+    total: number
+    online: number
+    offline: number
+  }
+  today: {
+    total: number
+    hourly: number[]
+    by_zone: { name: string; count: number }[]
+    by_type: { name: string; count: number }[]
+  }
+}
 
 const API_BASE = '/api/v1'
 
@@ -216,20 +243,23 @@ export const api = {
     return mockCameras
   },
 
-  async getIncidents(siteId?: string): Promise<SafetyEvent[]> {
+  async getIncidents(siteId?: string): Promise<SafetyEvent[] | null> {
     try {
       const url = siteId ? `${API_BASE}/incidents?site_id=${siteId}&size=100` : `${API_BASE}/incidents?size=100`
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data: IncidentsResponse | BackendIncident[] = await res.json()
       const items = Array.isArray(data) ? data : data.items || []
-      if (Array.isArray(items) && items.length > 0) {
-        return items.map(mapBackendIncidentToSafetyEvent)
-      }
+      return items.map(mapBackendIncidentToSafetyEvent)
     } catch {
-      // Fallback handled by caller
+      return null
     }
-    return []
+  },
+
+  async getAnalyticsSummary(siteId: string): Promise<AnalyticsSummary> {
+    const res = await fetch(`${API_BASE}/analytics/summary?site_id=${encodeURIComponent(siteId)}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
   },
 
   async updateStatus(id: string, status: EventStatus): Promise<boolean> {
@@ -248,7 +278,8 @@ export const api = {
   subscribeToEvents(
     onNewIncident: (incident: SafetyEvent) => void,
     onStatusUpdate: (id: string, status: EventStatus) => void,
-    onConnectionChange?: (connected: boolean) => void
+    onConnectionChange?: (connected: boolean) => void,
+    onIncidentUpdated?: (incident: SafetyEvent) => void
   ): () => void {
     let ws: WebSocket | null = null
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -279,6 +310,10 @@ export const api = {
             if ((payload.event === 'INCIDENT_CREATED' || payload.event === 'INCIDENT_NEW') && payload.data) {
               const incident = mapBackendIncidentToSafetyEvent(payload.data)
               onNewIncident(incident)
+            } else if (payload.event === 'INCIDENT_UPDATED' && payload.data) {
+              const incident = mapBackendIncidentToSafetyEvent(payload.data)
+              if (onIncidentUpdated) onIncidentUpdated(incident)
+              else onNewIncident(incident)
             } else if ((payload.event === 'INCIDENT_STATUS_UPDATED' || payload.event === 'INCIDENT_STATUS_CHANGED') && payload.data && payload.data.status) {
               onStatusUpdate(payload.data.id, payload.data.status)
             }

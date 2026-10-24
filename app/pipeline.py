@@ -109,8 +109,14 @@ class CameraWorker(threading.Thread):
               "latency_ms": round((time.perf_counter() - frame.wall) * 1e3, 1),
               "workshop": self.enterprise.workshop_for(self.cam)}
         ev["shift"], ev["shift_date"] = self.enterprise.shift_for(ts)
-        ev["id"] = self.store.add(ev)
-        logger.info("incident_created id=%s camera=%s type=%s severity=%s",
-                    ev["id"], self.cam, ev["type"], ev["severity"])
-        self.hub.publish({"kind": "event", "event": ev})
+        self.store.add(ev)
+        if ev["merged"]:
+            logger.info("incident_merged id=%s camera=%s type=%s severity=%s",
+                        ev["id"], self.cam, ev["type"], ev["severity"])
+            kind = "event_update"
+        else:
+            logger.info("incident_created id=%s camera=%s type=%s severity=%s",
+                        ev["id"], self.cam, ev["type"], ev["severity"])
+            kind = "event"
+        self.hub.publish({"kind": kind, "event": ev})
         return ev

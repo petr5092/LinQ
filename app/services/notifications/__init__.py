@@ -3,6 +3,7 @@
 """
 
 from app.services.notifications.manager import NotificationManager, notification_manager
+from app.services.notifications.base import BaseMessengerAdapter
 from app.services.notifications.netio import NetioClient
 from app.services.notifications.store import NotificationStore
 from app.services.notifications.telegram import TelegramClient
@@ -10,6 +11,7 @@ from app.services.notifications.telegram import TelegramClient
 __all__ = [
     "NotificationManager",
     "notification_manager",
+    "BaseMessengerAdapter",
     "NotificationStore",
     "TelegramClient",
     "NetioClient",

@@ -7,6 +7,18 @@ vi.mock("./services/api", () => ({
   api: {
     getSites: vi.fn().mockResolvedValue([]),
     getCameras: vi.fn().mockResolvedValue([]),
+    getAnalyticsSummary: vi.fn().mockResolvedValue({
+      date: "2026-10-24",
+      incidents: { total: 2, active: 1, new: 1, working: 0, resolved: 1, dismissed: 0 },
+      severity: { critical: 1, warning: 1, info: 0 },
+      cameras: { total: 0, online: 0, offline: 0 },
+      today: {
+        total: 1,
+        hourly: Array.from({ length: 24 }, (_, hour) => (hour === 14 ? 1 : 0)),
+        by_zone: [{ name: "Цех № 1", count: 1 }],
+        by_type: [{ name: "person", count: 1 }],
+      },
+    }),
     getIncidents: vi.fn().mockResolvedValue([
       {
         id: "TK-1048",
@@ -61,7 +73,6 @@ describe("<App /> Component Integration", () => {
     await act(async () => {
       render(<App />)
     })
-
     const nav = screen.getByRole("navigation", { name: "Основная навигация" })
     expect(within(nav).getByRole("button", { name: "Обзор" })).toBeInTheDocument()
     expect(within(nav).getByRole("button", { name: /Камеры/ })).toBeInTheDocument()
@@ -69,6 +80,19 @@ describe("<App /> Component Integration", () => {
     expect(within(nav).getByRole("button", { name: "Зоны и правила" })).toBeInTheDocument()
     expect(within(nav).getByRole("button", { name: "Контроль доступа" })).toBeInTheDocument()
     expect(within(nav).getByRole("button", { name: "Аналитика" })).toBeInTheDocument()
+  })
+
+  it("renders analytics from the backend summary instead of demo chart data", async () => {
+    await act(async () => {
+      render(<App />)
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Аналитика" }))
+
+    expect(await screen.findByText("Инциденты за сутки")).toBeInTheDocument()
+    expect(screen.getByText("Инциденты за всё время")).toBeInTheDocument()
+    expect(screen.getByText("24 октября 2026 г.")).toBeInTheDocument()
+    expect(screen.queryByText("23 октября · 08:00–20:00")).not.toBeInTheDocument()
   })
 
   it("shows API Live indicator when WebSocket connects", async () => {
