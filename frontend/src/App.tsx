@@ -376,6 +376,12 @@ function CameraView({
 
 }) {
 
+  const [mjpegFailed, setMjpegFailed] = useState(false)
+
+  useEffect(() => {
+    setMjpegFailed(false)
+  }, [mjpegUrl])
+
   const active = event && isOpen(event)
 
   const fallbackVideo = cameras.find((c) => c.id === event?.camera)?.video
@@ -410,7 +416,7 @@ function CameraView({
 
       {showVideo ? (
 
-        useMjpeg && mjpegUrl ? (
+        useMjpeg && mjpegUrl && !mjpegFailed ? (
 
           <img
 
@@ -423,6 +429,7 @@ function CameraView({
             loading="eager"
 
             decoding="sync"
+            onError={() => setMjpegFailed(true)}
 
           />
 
@@ -4455,7 +4462,7 @@ useEffect(() => {
 
             <div>
 
-              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/80">
+              <div className="flex items-center justify-between px-5 py-3 pr-12 border-b border-slate-800 bg-slate-900/80">
 
                 <div className="flex items-center gap-3">
 

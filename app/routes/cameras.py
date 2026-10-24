@@ -51,6 +51,7 @@ def get_camera(camera_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{camera_id}/stream")
+@router.get("/{camera_id}/stream.mjpg")
 async def stream_camera(camera_id: str):
     """Прямой MJPEG-видеопоток с камеры (multipart/x-mixed-replace)."""
     return StreamingResponse(
