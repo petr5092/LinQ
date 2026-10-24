@@ -36,7 +36,14 @@ def post_json(url: str, payload: dict, timeout: float = 30.0) -> Tuple[int, byte
         hdr = e.headers.get("Retry-After")
         if hdr and hdr.isdigit():
             retry_after = int(hdr)
-        raise ApiError(f"HTTP {e.code}: {e.reason}", e.code, retry_after)
+        err_msg = e.reason
+        try:
+            body = e.read().decode("utf-8")
+            d = json.loads(body)
+            err_msg = d.get("description", e.reason)
+        except Exception:
+            pass
+        raise ApiError(f"HTTP {e.code}: {err_msg}", e.code, retry_after)
     except urllib.error.URLError as e:
         raise ApiError(f"Сетевая ошибка: {e.reason}")
 
@@ -78,7 +85,14 @@ def post_multipart(url: str, fields: dict, files: dict, timeout: float = 30.0) -
         hdr = e.headers.get("Retry-After")
         if hdr and hdr.isdigit():
             retry_after = int(hdr)
-        raise ApiError(f"HTTP {e.code}: {e.reason}", e.code, retry_after)
+        err_msg = e.reason
+        try:
+            body = e.read().decode("utf-8")
+            d = json.loads(body)
+            err_msg = d.get("description", e.reason)
+        except Exception:
+            pass
+        raise ApiError(f"HTTP {e.code}: {err_msg}", e.code, retry_after)
     except urllib.error.URLError as e:
         raise ApiError(f"Сетевая ошибка: {e.reason}")
 

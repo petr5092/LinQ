@@ -278,6 +278,9 @@ class TelegramClient:
             op_text = f" ({html.escape(operator)})" if operator else ""
             lines.append(f"\n<b>Статус:</b> {st_text}{op_text}")
 
+        if self.public_url and self.public_url.startswith("http"):
+            lines.append(f'\n🔗 <a href="{html.escape(self.public_url)}">Открыть в дашборде</a>')
+
         return "\n".join(lines)
 
     def make_keyboard(self, event: dict) -> dict:
@@ -295,7 +298,12 @@ class TelegramClient:
             ],
         ]
 
-        if self.public_url and self.public_url.startswith("http"):
+        # Telegram Bot API запрещает localhost/127.0.0.1 в URL inline-кнопок
+        if (
+            self.public_url
+            and self.public_url.startswith("http")
+            and not any(h in self.public_url for h in ("localhost", "127.0.0.1", "0.0.0.0"))
+        ):
             rows.append([{"text": "Открыть в дашборде", "url": self.public_url}])
 
         return {"inline_keyboard": rows}

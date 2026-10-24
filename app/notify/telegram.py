@@ -171,7 +171,11 @@ class Telegram:
         i = ev["id"]
         rows = [[{"text": "Подтвердить", "callback_data": f"st:{i}:c"}, {"text": "Ложное", "callback_data": f"st:{i}:f"}],
                 [{"text": "Принял, иду", "callback_data": f"st:{i}:w"}]]
-        if self.core.public_url and self.core.public_url.startswith("http"):
+        if (
+            self.core.public_url
+            and self.core.public_url.startswith("http")
+            and not any(h in self.core.public_url for h in ("localhost", "127.0.0.1", "0.0.0.0"))
+        ):
             rows.append([{"text": "Открыть в панели", "url": self.core.public_url}])
         return {"inline_keyboard": rows}
 
