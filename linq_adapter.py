@@ -11,10 +11,20 @@ import numpy as np
 
 class NativeRuntime:
     def __init__(self, program_path):
+        self._is_cloud = False
+        self._cloud_runtime = None
         try:
             import pytpu as tpu
-        except ImportError as exc:
-            raise RuntimeError('Install pytpu from the organizer SDK on the LinQ host; this is not a PyPI dependency') from exc
+        except ImportError:
+            # Automatic fallback to organizer LinQ Cloud TPU adapter over RabbitMQ
+            try:
+                from engine.inference.linq_cloud_adapter import load as cloud_load
+                self._cloud_runtime = cloud_load(program_path)
+                self._is_cloud = True
+                return
+            except Exception as exc:
+                raise RuntimeError('Neither pytpu nor linq_cloud_adapter could be initialized for LinQ TPU') from exc
+
         self._stack = ExitStack()
         self._closed = False
         self.input_name = os.getenv('LINQ_INPUT_NAME', 'images')
@@ -27,8 +37,6 @@ class NativeRuntime:
             device = self._stack.enter_context(tpu.Device.open(devices[index]))
             program = self._stack.enter_context(device.load(str(program_path)))
             self._inference = self._stack.enter_context(program.inference())
-            # SDK 2026.9.45 documents sync(); the separate older Python example
-            # uses run(). Both are documented interfaces, not guessed methods.
             self._run = getattr(self._inference, 'sync', None)
             if not callable(self._run):
                 self._run = getattr(self._inference, 'run', None)
@@ -39,6 +47,8 @@ class NativeRuntime:
             raise
 
     def __call__(self, tensor):
+        if self._is_cloud and self._cloud_runtime is not None:
+            return self._cloud_runtime(tensor)
         if self._closed:
             raise RuntimeError('LinQ runtime is closed')
         if tensor.dtype != np.float32 or tensor.ndim != 4 or tensor.shape[:2] != (1, 3):
@@ -49,6 +59,10 @@ class NativeRuntime:
         return outputs[self.output_name]
 
     def close(self):
+        if self._is_cloud and self._cloud_runtime is not None:
+            if hasattr(self._cloud_runtime, 'close'):
+                self._cloud_runtime.close()
+            return
         if not self._closed:
             self._closed = True
             self._stack.close()

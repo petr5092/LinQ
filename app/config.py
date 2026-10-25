@@ -103,5 +103,8 @@ class Settings(BaseModel):
     TELEGRAM_API_BASE: str = Field(default_factory=lambda: os.getenv("LINQ_TG_API") or os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org"))
     PUBLIC_DASHBOARD_URL: Optional[str] = Field(default_factory=lambda: os.getenv("PUBLIC_DASHBOARD_URL") or os.getenv("LINQ_PUBLIC_URL", "http://localhost:3000"))
 
+    # Виртуальный симулятор тепловизора
+    ENABLE_THERMAL_SIMULATOR: bool = Field(default_factory=lambda: os.getenv("ENABLE_THERMAL_SIMULATOR", "True").lower() in ("true", "1", "yes"))
+
 
 settings = Settings()

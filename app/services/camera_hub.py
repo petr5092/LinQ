@@ -24,6 +24,7 @@ class CameraHub:
 
     def __init__(self) -> None:
         self._frames: Dict[str, Tuple[int, bytes]] = {}
+        self._violation_frames: Dict[str, Tuple[int, bytes]] = {}
         self._cond = threading.Condition()
         self._states: Dict[str, dict] = {}
         self._state_lock = threading.Lock()
@@ -64,6 +65,33 @@ class CameraHub:
         with self._cond:
             entry = self._frames.get(camera_id)
             return entry[1] if entry else None
+
+    def set_violation_frame(self, camera_id: str, frame_data: np.ndarray | bytes) -> None:
+        """Сохранение стоп-кадра с последним зафиксированным нарушением."""
+        if isinstance(frame_data, np.ndarray):
+            h, w = frame_data.shape[:2]
+            if w > 1280:
+                scale = 1280.0 / w
+                frame_data = cv2.resize(frame_data, (1280, int(h * scale)), interpolation=cv2.INTER_AREA)
+            success, enc = cv2.imencode(".jpg", frame_data, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            jpeg_bytes = enc.tobytes() if success else b""
+        else:
+            jpeg_bytes = frame_data
+
+        with self._cond:
+            seq = self._violation_frames.get(camera_id, (0, b""))[0] + 1
+            self._violation_frames[camera_id] = (seq, jpeg_bytes)
+            self._cond.notify_all()
+
+    def get_violation_frame(self, camera_id: str) -> Optional[bytes]:
+        """Получение стоп-кадра последнего зафиксированного нарушения."""
+        with self._cond:
+            entry = self._violation_frames.get(camera_id)
+            return entry[1] if entry else None
+
+    def get_snapshot(self, camera_id: str) -> Optional[bytes]:
+        """Получение стоп-кадра: приоритет отдается последнему нарушению, иначе свежий кадр."""
+        return self.get_violation_frame(camera_id) or self.get_frame(camera_id)
 
     def wait_frame(self, camera_id: str, last_seq: int, timeout: float = 3.0) -> Tuple[int, Optional[bytes]]:
         """Ожидание появления нового кадра (для генерации MJPEG)."""

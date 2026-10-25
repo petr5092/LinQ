@@ -6,6 +6,7 @@ from app.routes.incidents import router as incidents_router
 from app.routes.analytics import router as analytics_router
 from app.routes.notifications import router as notifications_router
 from app.routes.worker import router as worker_router
+from app.routes.thermal import router as thermal_router
 
 api_router = APIRouter()
 
@@ -16,3 +17,4 @@ api_router.include_router(incidents_router)
 api_router.include_router(analytics_router)
 api_router.include_router(notifications_router)
 api_router.include_router(worker_router)
+api_router.include_router(thermal_router)

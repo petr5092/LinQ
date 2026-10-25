@@ -18,12 +18,14 @@ from app.services.notifications.store import NotificationStore
 
 SEV_LEVELS = {"all": "low", "low": "low", "medium": "medium", "high": "high", "critical": "critical"}
 SEV_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
-SEV_ICON = {"critical": "🚨", "high": "🔶", "medium": "🟡", "low": "⚪"}
-STATUS_MAP = {"c": "confirmed", "f": "false_positive", "w": "acknowledged"}
+SEV_ICON = {"critical": "🚨", "high": "🔶", "warning": "🟡", "medium": "🟡", "low": "⚪"}
+STATUS_MAP = {"c": "confirmed", "f": "false_positive", "w": "acknowledged", "r": "resolved"}
 STATUS_TEXT = {
     "confirmed": "✅ Подтверждено",
     "false_positive": "✖️ Ложная тревога",
+    "dismissed": "✖️ Ложная тревога",
     "acknowledged": "👷 Принято в работу",
+    "working": "👷 В работе",
     "resolved": "✔️ Устранено",
     "new": "⚠️ Ожидает проверки",
 }
@@ -116,7 +118,8 @@ class TelegramClient(BaseMessengerAdapter):
                         {
                             "commands": [
                                 {"command": "start", "description": "Подключить этот чат к уведомлениям"},
-                                {"command": "status", "description": "Сводка безопасности за сутки"},
+                                {"command": "status", "description": "Сводка безопасности и журнал нарушений"},
+                                {"command": "sync", "description": "Синхронизировать нарушения из журнала"},
                                 {"command": "level", "description": "Порог важности: all, medium, high, critical"},
                                 {"command": "stop", "description": "Отключить уведомления"},
                             ]
@@ -203,16 +206,61 @@ class TelegramClient(BaseMessengerAdapter):
         elif cmd == "/stop":
             self.store.set_subscriber_active(self.channel, cid, False)
             self.send_message(cid, "Уведомления отключены. Чтобы вернуть: /start.")
-        elif cmd == "/status":
+        elif cmd in ("/status", "/stats"):
             sub = self.store.get_subscriber(self.channel, cid)
             state = "подключен" if sub and sub["active"] else "не подключен (/start)"
             lvl = sub["min_severity"] if sub else "—"
+
+            journal_info = ""
+            try:
+                from app.db.session import SessionLocal
+                from app.db.models.incident import Incident
+                from sqlalchemy import select, func
+                with SessionLocal() as db:
+                    total = db.scalar(select(func.count(Incident.id))) or 0
+                    open_cnt = db.scalar(select(func.count(Incident.id)).where(Incident.status.in_(("new", "working")))) or 0
+                    new_cnt = db.scalar(select(func.count(Incident.id)).where(Incident.status == "new")) or 0
+                    work_cnt = db.scalar(select(func.count(Incident.id)).where(Incident.status == "working")) or 0
+                    resolved_cnt = db.scalar(select(func.count(Incident.id)).where(Incident.status == "resolved")) or 0
+                    journal_info = (
+                        f"\n\n<b>📊 Журнал нарушений:</b>\n"
+                        f"• Всего зарегистрировано: <b>{total}</b>\n"
+                        f"• Требуют реакции: <b>{open_cnt}</b> (новых: {new_cnt}, в работе: {work_cnt})\n"
+                        f"• Устранено: <b>{resolved_cnt}</b>"
+                    )
+            except Exception:
+                journal_info = "\n\nСистема видеоаналитики LinQ активна."
+
             self.send_message(
                 cid,
                 f"<b>Состояние бота:</b> {state}\n"
-                f"<b>Текущий порог:</b> {lvl}\n"
-                "Система видеоаналитики LinQ активна.",
+                f"<b>Текущий порог важности:</b> {lvl}"
+                f"{journal_info}",
             )
+        elif cmd in ("/sync", "/incidents", "/events"):
+            try:
+                from app.db.session import SessionLocal
+                from app.db.models.incident import Incident
+                from app.services.incident_service import map_incident_to_read
+                from sqlalchemy import select, desc
+                with SessionLocal() as db:
+                    open_incidents = db.scalars(
+                        select(Incident)
+                        .where(Incident.status.in_(("new", "working")))
+                        .order_by(desc(Incident.created_at))
+                        .limit(5)
+                    ).all()
+                    if not open_incidents:
+                        self.send_message(cid, "✅ <b>В журнале нет активных нарушений.</b> Все инциденты устранены.")
+                    else:
+                        self.send_message(cid, f"📋 <b>Активные нарушения из журнала ({len(open_incidents)}):</b>")
+                        sub = self.store.get_subscriber(self.channel, cid)
+                        if sub:
+                            for inc in open_incidents:
+                                inc_dict = map_incident_to_read(inc).model_dump(mode="json")
+                                self.send_alert(sub, inc_dict)
+            except Exception as e:
+                self.send_message(cid, f"Ошибка синхронизации: {e}")
         elif cmd == "/level":
             if arg.lower() in SEV_LEVELS and self.store.get_subscriber(self.channel, cid):
                 chosen_lvl = SEV_LEVELS[arg.lower()]
@@ -225,15 +273,16 @@ class TelegramClient(BaseMessengerAdapter):
             self.send_message(
                 cid,
                 "/start — подключить чат\n"
-                "/status — сводка состояния\n"
+                "/status — сводка состояния и статистика журнала\n"
+                "/sync — синхронизировать открытые нарушения из журнала\n"
                 "/level [уровень] — фильтр важности (low/medium/high/critical)\n"
                 "/stop — отключить чат",
             )
 
     def on_callback(self, cq: dict) -> None:
         data = cq.get("data", "")
-        # Формат callback: st:<event_id>:<c|f|w>
-        match = re.fullmatch(r"st:([\w\-]+):([cfw])", data)
+        # Формат callback: st:<event_id>:<c|f|w|r>
+        match = re.fullmatch(r"st:([\w\-]+):([cfwr])", data)
         if not match:
             return self.api("answerCallbackQuery", {"callback_query_id": cq["id"]})
 
@@ -264,44 +313,145 @@ class TelegramClient(BaseMessengerAdapter):
 
     def format_caption(self, event: dict) -> str:
         sev = str(event.get("severity", "medium")).lower()
-        icon = SEV_ICON.get(sev, "⚠️")
-        rule_label = event.get("rule_label") or event.get("rule_name") or "Нарушение ТБ"
-        cam_name = event.get("camera_name") or event.get("camera_id") or "Камера"
-        zone = event.get("zone_name") or event.get("zone_id") or ""
-        ts_str = event.get("timestamp_str") or event.get("time") or time.strftime("%H:%M:%S %d.%m.%Y")
+        rule_label = (
+            event.get("title")
+            or event.get("rule_label")
+            or event.get("rule_name")
+            or "Нарушение ТБ"
+        )
+        cam_name = (
+            event.get("camera_name")
+            or event.get("camera_id")
+            or "Камера"
+        )
+        cam_id = str(event.get("camera_id") or "")
+        zone = (
+            event.get("zone")
+            or event.get("zone_name")
+            or event.get("zone_id")
+            or ""
+        )
+        ts_str = (
+            event.get("timestamp_str")
+            or event.get("time")
+            or time.strftime("%H:%M:%S %d.%m.%Y")
+        )
         status = event.get("status", "new")
-        operator = event.get("assigned_to") or event.get("operator_notes")
+        operator = (
+            event.get("contact_name")
+            or event.get("assigned_to")
+            or event.get("operator_notes")
+        )
+        desc = str(event.get("description") or "")
+        action = event.get("action")
 
-        lines = [
-            f"{icon} <b>{html.escape(rule_label)}</b>",
-            f"📹 Камера: <b>{html.escape(cam_name)}</b>" + (f" (зона: {html.escape(zone)})" if zone else ""),
-            f"⏰ Время: {html.escape(ts_str)}",
-        ]
+        title_lower = rule_label.lower()
+        desc_lower = desc.lower()
+        cam_id_lower = cam_id.lower()
+
+        is_thermal = (
+            "перегрев" in title_lower
+            or "перегрев" in desc_lower
+            or "температур" in title_lower
+            or "температур" in desc_lower
+            or "thermal" in cam_id_lower
+            or "тепловиз" in cam_id_lower
+            or event.get("type") in ("thermal", "temperature")
+        )
+
+        if is_thermal:
+            icon = "🔥"
+            # Извлекаем температуру, порог и величину превышения
+            combined = f"{rule_label} {desc}"
+            cur_temp = event.get("max_temperature_c") or event.get("temperature")
+            threshold = event.get("threshold_c") or event.get("threshold")
+            excess = event.get("excess_c") or event.get("diff_c")
+
+            if excess is None:
+                m_exc = re.search(
+                    r"превышен[ие|я]*[:\s]*\+?(\d+(?:\.\d+)?)|(?:\+|\b)(\d+(?:\.\d+)?)\s*°?\s*[cCсС]\s*выше",
+                    combined,
+                    re.IGNORECASE,
+                )
+                if not m_exc:
+                    m_exc = re.search(r"\+(\d+(?:\.\d+)?)\s*°?\s*[cCсС]", combined)
+                if m_exc:
+                    excess = float(m_exc.group(1) or m_exc.group(2))
+
+            if cur_temp is None:
+                m_cur = re.search(
+                    r"(?:температура(?:\s*достигла|\s*составляет)?|\:)\s*(\d+(?:\.\d+)?)\s*°?\s*[cCсС]",
+                    combined,
+                    re.IGNORECASE,
+                )
+                if m_cur:
+                    cur_temp = float(m_cur.group(1))
+
+            if threshold is None:
+                m_thr = re.search(r"порог[еа]?\s*[:\s]*(\d+(?:\.\d+)?)\s*°?\s*[cCсС]?", combined, re.IGNORECASE)
+                if m_thr:
+                    threshold = float(m_thr.group(1))
+
+            if excess is None and cur_temp is not None and threshold is not None:
+                diff = round(float(cur_temp) - float(threshold), 1)
+                if diff > 0:
+                    excess = diff
+
+            lines = [
+                f"{icon} <b>{html.escape(rule_label)}</b>",
+                f"📹 Камера: <b>{html.escape(cam_name)}</b>" + (f" (зона: {html.escape(zone)})" if zone else ""),
+            ]
+
+            if cur_temp is not None and threshold is not None:
+                lines.append(f"🌡 Температура: <b>{float(cur_temp):.1f} °C</b> (порог: <b>{float(threshold):.1f} °C</b>)")
+            elif cur_temp is not None:
+                lines.append(f"🌡 Температура: <b>{float(cur_temp):.1f} °C</b>")
+
+            if excess is not None:
+                lines.append(f"🔺 <b>Превышение порога: +{float(excess):.1f} °C</b>")
+
+            if action:
+                lines.append(f"⚠️ Действие: {html.escape(action)}")
+
+            lines.append(f"⏰ Время: {html.escape(ts_str)}")
+        else:
+            icon = SEV_ICON.get(sev, "⚠️")
+            lines = [
+                f"{icon} <b>{html.escape(rule_label)}</b>",
+                f"📹 Камера: <b>{html.escape(cam_name)}</b>" + (f" (зона: {html.escape(zone)})" if zone else ""),
+                f"⏰ Время: {html.escape(ts_str)}",
+            ]
+            if action:
+                lines.append(f"⚠️ Рекомендация: {html.escape(action)}")
 
         if status != "new":
             st_text = STATUS_TEXT.get(status, status)
             op_text = f" ({html.escape(operator)})" if operator else ""
             lines.append(f"\n<b>Статус:</b> {st_text}{op_text}")
 
-        if self.public_url and self.public_url.startswith("http"):
-            lines.append(f'\n🔗 <a href="{html.escape(self.public_url)}">Открыть в дашборде</a>')
-
         return "\n".join(lines)
 
     def make_keyboard(self, event: dict) -> dict:
-        if event.get("status") not in ("new", None):
+        status = event.get("status", "new")
+        if status in ("resolved", "dismissed"):
             return {"inline_keyboard": []}
 
         eid = str(event.get("id") or event.get("event_id") or "0")
-        rows = [
-            [
+        rows = []
+
+        if status in ("new", None):
+            rows.append([
                 {"text": "Подтвердить", "callback_data": f"st:{eid}:c"},
                 {"text": "Ложное", "callback_data": f"st:{eid}:f"},
-            ],
-            [
+            ])
+            rows.append([
                 {"text": "Принял, иду", "callback_data": f"st:{eid}:w"},
-            ],
-        ]
+            ])
+        elif status in ("working", "acknowledged", "confirmed"):
+            rows.append([
+                {"text": "✔️ Устранено", "callback_data": f"st:{eid}:r"},
+                {"text": "✖️ Ложная тревога", "callback_data": f"st:{eid}:f"},
+            ])
 
         # Telegram Bot API запрещает localhost/127.0.0.1 в URL inline-кнопок
         if (

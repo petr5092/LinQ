@@ -1,16 +1,19 @@
+import os
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models.camera import Camera
+from app.db.models.incident import Incident
 from app.db.models.site import Site
 from app.schemas.camera import CameraRead, CameraCreate, CameraUpdate
 from app.schemas.common import StatusResponse
 from app.services.camera_hub import camera_hub
+from app.storage.factory import get_storage_provider
 
 router = APIRouter(prefix="/cameras", tags=["Cameras"])
 
@@ -62,13 +65,51 @@ async def stream_camera(camera_id: str):
 
 
 @router.get("/{camera_id}/frame.jpg")
-def get_camera_frame(camera_id: str):
-    """Получение последнего JPEG-кадра с камеры."""
-    frame_bytes = camera_hub.get_frame(camera_id)
+def get_camera_frame(camera_id: str, mode: Optional[str] = None):
+    """Получение последнего JPEG-кадра с камеры (если mode='snapshot' или 'violation', возвращает кадр последнего нарушения)."""
+    if mode in ("snapshot", "violation"):
+        frame_bytes = camera_hub.get_snapshot(camera_id)
+    else:
+        frame_bytes = camera_hub.get_frame(camera_id) or camera_hub.get_snapshot(camera_id)
     if not frame_bytes:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Свежий кадр для камеры '{camera_id}' пока не получен",
+        )
+    return Response(
+        content=frame_bytes,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@router.get("/{camera_id}/snapshot.jpg")
+def get_camera_snapshot(camera_id: str, db: Session = Depends(get_db)):
+    """Получение стоп-кадра последнего зафиксированного нарушения с камеры."""
+    frame_bytes = camera_hub.get_violation_frame(camera_id)
+    if not frame_bytes:
+        incident = db.scalar(
+            select(Incident)
+            .where(Incident.camera_id == camera_id, Incident.image_key != "")
+            .order_by(desc(Incident.created_at))
+            .limit(1)
+        )
+        if incident and incident.image_key:
+            storage = get_storage_provider()
+            if hasattr(storage, "base_dir"):
+                img_path = os.path.join(storage.base_dir, incident.image_key.lstrip("/"))
+                if os.path.isfile(img_path):
+                    try:
+                        with open(img_path, "rb") as f:
+                            frame_bytes = f.read()
+                    except OSError:
+                        pass
+    if not frame_bytes:
+        frame_bytes = camera_hub.get_frame(camera_id)
+    if not frame_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Стоп-кадр для камеры '{camera_id}' пока не получен",
         )
     return Response(
         content=frame_bytes,
@@ -108,6 +149,7 @@ def create_camera(camera_in: CameraCreate, db: Session = Depends(get_db)):
         workshop=camera_in.workshop,
         site_id=camera_in.site_id,
         rtsp_url=camera_in.rtsp_url,
+        camera_type=camera_in.camera_type,
         image_placeholder=camera_in.image_placeholder,
         online=camera_in.online,
         fps=camera_in.fps,

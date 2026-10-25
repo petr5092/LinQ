@@ -35,8 +35,8 @@ services:
     environment:
       - LINQ_TG_TOKEN=${LINQ_TG_TOKEN:-}
       - LINQ_PUBLIC_URL=${LINQ_PUBLIC_URL:-http://localhost:3000}
-      - HTTPS_PROXY=${HTTPS_PROXY:-http://192.168.65.254:7890}
-      - HTTP_PROXY=${HTTP_PROXY:-http://192.168.65.254:7890}
+      - HTTPS_PROXY=${DOCKER_HTTPS_PROXY:-http://host.docker.internal:7890}
+      - HTTP_PROXY=${DOCKER_HTTP_PROXY:-http://host.docker.internal:7890}
       - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,postgres,backend,minio}
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-linq_safety}
       - INFERENCE_BACKEND=${INFERENCE_BACKEND:-ONNX_CPU}
@@ -50,6 +50,7 @@ services:
       - "8000:8000"
     volumes:
       - ./.env:/app/.env:ro
+      - ./configs:/app/configs:ro
       - ./storage/snapshots:/app/storage/snapshots
       - ./storage/demo_videos:/app/storage/demo_videos
       - ./data:/app/data

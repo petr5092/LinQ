@@ -81,6 +81,14 @@ class EventStore:
                     (existing["severity"], ev["severity"]),
                     key=lambda value: SEVERITY_RANK.get(value, 0),
                 )
+                old_snapshot = existing["snapshot"]
+                if old_snapshot and old_snapshot != ev.get("snapshot"):
+                    old_path = os.path.join(config.SNAP_DIR, old_snapshot)
+                    try:
+                        if os.path.isfile(old_path):
+                            os.remove(old_path)
+                    except OSError:
+                        pass
                 self.db.execute(
                     "UPDATE events SET ts=?, label=?, severity=?, zone=?, track_id=?, snapshot=?, latency_ms=?, "
                     "workshop=?, shift=?, shift_date=? WHERE id=?",

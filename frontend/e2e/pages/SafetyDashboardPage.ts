@@ -17,7 +17,7 @@ export class SafetyDashboardPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.brandLink = page.getByRole('link', { name: /Тук-Тук/i });
+    this.brandLink = page.getByRole('link', { name: /LinQsec/i }).or(page.locator('.brand'));
     this.nav = page.getByRole('navigation', { name: 'Основная навигация' });
     this.siteSelect = page.getByRole('combobox', { name: 'Выбор площадки' });
     this.exportButton = page.getByRole('button', { name: /Экспорт/i });

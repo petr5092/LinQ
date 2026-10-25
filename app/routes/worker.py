@@ -3,6 +3,7 @@ import base64
 import binascii
 import logging
 import re
+from datetime import datetime
 import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -78,7 +79,7 @@ async def ingest_incident(
         'data': data,
     })
     if created:
-        notification_manager.dispatch_incident(data)
+        notification_manager.dispatch_incident(data, key)
     else:
         notification_manager.refresh_incident(data)
     return incident
@@ -103,6 +104,10 @@ async def ingest_browser_frame(
             raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, 'Размер JPEG не должен превышать 2 МБ.')
     if not jpeg:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, 'Размер JPEG должен быть от 1 байта до 2 МБ.')
+    if not camera.online:
+        camera.online = True
+    camera.last_heartbeat = datetime.utcnow()
+    db.commit()
     try:
         result = await run_in_threadpool(process_browser_frame, camera, jpeg)
     except BrowserCameraConfigurationError as exc:

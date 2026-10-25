@@ -375,3 +375,142 @@ def test_notification_manager_retry_on_failure(tmp_path):
     deliveries = mgr.store.get_deliveries_for_event("inc_retry")
     assert len(deliveries) == 1
     assert deliveries[0]["message_id"] == "msg_success"
+
+
+def test_telegram_resolve_action_and_working_keyboard(mock_telegram_client):
+    """Проверка кнопок и callback устранения (resolved) для инцидента в работе."""
+    # Клавиатура для инцидента в статусе 'working' должна содержать кнопку 'Устранено' и 'Ложное'
+    event_working = {"id": "inc_99", "status": "working"}
+    kb = mock_telegram_client.make_keyboard(event_working)
+    rows = kb["inline_keyboard"]
+    assert len(rows) >= 1
+    assert rows[0][0]["callback_data"] == "st:inc_99:r"
+    assert "Устранено" in rows[0][0]["text"]
+    assert rows[0][1]["callback_data"] == "st:inc_99:f"
+
+    # Callback 'r' должен вызывать on_status_change со статусом 'resolved'
+    status_calls = []
+    mock_telegram_client.on_status_change = lambda eid, st, op: status_calls.append((eid, st, op))
+    mock_telegram_client.api = MagicMock()
+
+    cq = {
+        "id": "query_resolve",
+        "data": "st:inc_99:r",
+        "from": {"username": "safety_officer"},
+    }
+    mock_telegram_client.on_callback(cq)
+    assert len(status_calls) == 1
+    assert status_calls[0] == ("inc_99", "resolved", "safety_officer")
+
+
+def test_store_list_deliveries(temp_store):
+    """Проверка фильтрации и выборки журнала доставок и ошибок."""
+    temp_store.add_delivery("TK-01", "telegram", "123", "msg_1", "photo", ok=True, latency_ms=120)
+    temp_store.add_delivery("TK-02", "telegram", "123", None, "failed", ok=False, error="Connection timeout")
+
+    all_delivs = temp_store.list_deliveries(limit=10)
+    assert len(all_delivs) == 2
+
+    failed_only = temp_store.list_deliveries(failed_only=True)
+    assert len(failed_only) == 1
+    assert failed_only[0]["event_id"] == "TK-02"
+    assert "timeout" in failed_only[0]["error"]
+
+
+def test_notification_snapshot_resolution_from_video_processing(tmp_path):
+    """Синхронизация оповещений с видеообработкой: проверка резолвинга стоп-кадра из storage."""
+    mgr = NotificationManager()
+    mgr.store = NotificationStore(str(tmp_path / "video_sync.db"))
+    sub = mgr.store.upsert_subscriber("telegram", "chat_video_ops", "Дежурная смена", "group")
+
+    # Создаем тестовый стоп-кадр на диске в подпапке даты
+    snap_dir = tmp_path / "snapshots" / "2026-10-25"
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    snap_file = snap_dir / "inc_TK-VIDEO-01_CAM-01.jpg"
+    snap_file.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+
+    # Имитируем инцидент, созданный воркером видеопотока
+    video_event = {
+        "id": "TK-VIDEO-01",
+        "camera_id": "CAM-01",
+        "camera_name": "Xiaomi 360 (Сборочный участок)",
+        "zone": "Цех № 1",
+        "title": "Сотрудник без каски в рабочей зоне",
+        "severity": "critical",
+        "snapshot_path": "/static/snapshots/2026-10-25/inc_TK-VIDEO-01_CAM-01.jpg",
+        "image_key": "/static/snapshots/2026-10-25/inc_TK-VIDEO-01_CAM-01.jpg",
+    }
+
+    mgr.telegram.token = "VALID_TOKEN"
+    calls = []
+    def mock_send(subscriber, event, snap_path):
+        calls.append((subscriber["chat_id"], event["id"], snap_path))
+        return "msg_123", "photo"
+
+    mgr.telegram.send_alert = mock_send
+
+    with patch("app.services.notifications.manager.settings.LOCAL_SNAPSHOTS_DIR", str(tmp_path / "snapshots")), \
+         patch("app.services.notifications.manager.BASE_DIR", tmp_path):
+        mgr._deliver_incident(video_event, video_event["snapshot_path"])
+
+    assert len(calls) == 1
+    chat_id, eid, actual_snap = calls[0]
+    assert chat_id == "chat_video_ops"
+    assert eid == "TK-VIDEO-01"
+    assert actual_snap is not None
+    assert os.path.normpath(actual_snap) == os.path.normpath(str(snap_file))
+
+
+def test_single_alert_for_prolonged_violation(tmp_path):
+    """
+    Проверка требования: при начале нарушения отсылается ровно один алерт.
+    Если нарушение продолжается (продолжительное), повторные алерты не отправляются.
+    Новый алерт шлется только после прекращения/устранения предыдущего.
+    """
+    mgr = NotificationManager()
+    mgr.store = NotificationStore(str(tmp_path / "prolonged_test.db"))
+
+    inc1 = {
+        "id": "TK-P1",
+        "camera_id": "CAM-01",
+        "title": "Сотрудник без каски",
+        "severity": "high",
+    }
+    inc2 = {
+        "id": "TK-P2",
+        "camera_id": "CAM-01",
+        "title": "Сотрудник без каски",
+        "severity": "high",
+    }
+
+    # 1. Начало нарушения — ставится задача на рассылку нового алерта
+    mgr.dispatch_incident(inc1)
+    task1 = mgr.q.get_nowait()
+    assert task1["kind"] == "incident"
+    assert task1["event"]["id"] == "TK-P1"
+
+    # 2. Нарушение продолжается — повторный вызов НЕ создает второй алерт, а обновляет текущий
+    mgr.dispatch_incident(inc2)
+    task2 = mgr.q.get_nowait()
+    assert task2["kind"] == "incident_update"
+    assert task2["event"]["id"] == "TK-P2"
+
+    # 3. Инцидент устранен (resolved)
+    mgr.update_incident_status("TK-P2", "resolved")
+    status_task = mgr.q.get_nowait()
+    assert status_task["kind"] == "status_update"
+
+    # 4. Спустя время нарушение начинается снова — должен уйти новый алерт
+    inc3 = {
+        "id": "TK-P3",
+        "camera_id": "CAM-01",
+        "title": "Сотрудник без каски",
+        "severity": "high",
+    }
+    mgr.dispatch_incident(inc3)
+    task3 = mgr.q.get_nowait()
+    assert task3["kind"] == "incident"
+    assert task3["event"]["id"] == "TK-P3"
+
+
+

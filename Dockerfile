@@ -21,6 +21,7 @@ COPY app/ ./app/
 COPY engine/ ./engine/
 COPY linq_tools/ ./linq_tools/
 COPY models/ ./models/
+COPY configs/ ./configs/
 COPY storage/ ./storage/
 COPY run.py run_worker.py linq_adapter.py alembic.ini ./
 COPY alembic/ ./alembic/

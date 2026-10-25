@@ -9,7 +9,7 @@ import queue
 import re
 import threading
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from app.config import settings, BASE_DIR
 from app.services.notifications.base import BaseMessengerAdapter
@@ -44,6 +44,10 @@ class NotificationManager:
             on_status_change=self._on_telegram_status_change,
         )
         self.adapters: Dict[str, BaseMessengerAdapter] = {"telegram": self.telegram}
+
+        # Отслеживание активных оповещений: (camera_id, title) -> (incident_id, timestamp)
+        # Гарантирует, что на длящееся нарушение отсылается ровно один алерт
+        self._active_camera_alerts: Dict[Tuple[str, str], Tuple[str, float]] = {}
 
         # Инициализация NetIO
         netio_host = getattr(settings, "NETIO_HOST", None) or os.getenv("NETIO_HOST")
@@ -93,8 +97,96 @@ class NotificationManager:
             self.register_adapter(load_adapter(spec, self))
         self._plugins_loaded = True
 
+    def is_incident_notification_allowed(self, incident: dict) -> bool:
+        """
+        Проверяет по матрице настроек 'Зоны и правила', разрешена ли отправка
+        уведомлений для данного нарушения на указанном участке.
+        """
+        zone = str(incident.get("zone") or incident.get("zone_id") or "").strip()
+        if not zone:
+            return True
+
+        title = str(incident.get("title") or "").lower()
+        desc = str(incident.get("description") or "").lower()
+        rule_name = str(incident.get("rule_name") or incident.get("type") or "").lower()
+        combined = f"{title} {desc} {rule_name}"
+
+        # Правила, на которых обучена модель + радиометрический температурный контроль
+        rule_mappings = [
+            (
+                "Контроль касок и жилетов (СИЗ)",
+                ("каск", "жилет", "сиз", "helmet", "vest", "hardhat", "ppe_compliance", "респиратор"),
+                ["Контроль касок и жилетов (СИЗ)", "Контроль касок и респираторов"],
+            ),
+            (
+                "Опасное сближение с техникой",
+                ("сближен", "proximity", "техник", "погрузчик", "авто", "машин"),
+                ["Опасное сближение с техникой", "Опасное сближение с оборудованием"],
+            ),
+            (
+                "Нахождение в опасной зоне",
+                ("опасн", "периметр", "danger_zone", "запретн", "проникновен"),
+                ["Нахождение в опасной зоне", "Вход в опасную зону"],
+            ),
+            (
+                "Падение человека",
+                ("падени", "лежит", "неподвиж", "fall", "fall_detection"),
+                ["Падение человека"],
+            ),
+            (
+                "Температурный контроль и перегрев",
+                ("температур", "перегрев", "тепловиз", "thermal", "жар", "градус"),
+                ["Температурный контроль и перегрев", "Температурный контроль", "Перегрев оборудования"],
+            ),
+        ]
+
+        matched_aliases: List[str] = []
+        for rule_label, keywords, aliases in rule_mappings:
+            if any(kw in combined for kw in keywords):
+                matched_aliases.extend(aliases)
+
+        # Прямое совпадение по заголовку или названию правила (для пользовательских правил)
+        raw_title = str(incident.get("title") or "").strip()
+        if raw_title and raw_title not in matched_aliases:
+            matched_aliases.append(raw_title)
+
+        # Если хотя бы один алиас или правило для этой зоны отключено — подавляем отправку
+        for alias in matched_aliases:
+            if not self.store.is_notification_enabled_for_zone(zone, alias):
+                return False
+
+        return True
+
     def dispatch_incident(self, incident: dict, snapshot_path: Optional[str] = None) -> None:
-        """Постановка инцидента в очередь внешней рассылки."""
+        """Постановка инцидента в очередь внешней рассылки (только при старте нового нарушения)."""
+        if not self.is_incident_notification_allowed(incident):
+            return
+
+        cam_id = str(incident.get("camera_id") or "")
+        title = str(incident.get("title") or "")
+        key = (cam_id, title)
+
+        # Если по этой камере и данному нарушению уже активен алерт в пределах кулдауна — нарушение продолжается.
+        # Не спамим новыми сообщениями, а только обновляем данные текущего инцидента.
+        existing = self._active_camera_alerts.get(key)
+        cooldown = float(os.getenv("COOLDOWN_SECONDS", "20"))
+        now_ts = time.time()
+
+        if existing:
+            existing_id, alert_time = existing
+            if now_ts - alert_time < cooldown:
+                incident_id = str(incident.get("id") or incident.get("event_id") or "")
+                if incident_id and incident_id != existing_id:
+                    self._active_camera_alerts[key] = (incident_id, alert_time)
+                self.refresh_incident(incident)
+                return
+            else:
+                self._active_camera_alerts.pop(key, None)
+
+        eid = str(incident.get("id") or incident.get("event_id") or "")
+        if key[0] and eid:
+            self._active_camera_alerts[key] = (eid, now_ts)
+
         try:
             self.q.put_nowait({
                 "kind": "incident",
@@ -106,13 +198,30 @@ class NotificationManager:
 
     def refresh_incident(self, incident: dict) -> None:
         """Update the existing notification for a repeated detection."""
+        if not self.is_incident_notification_allowed(incident):
+            return
         try:
             self.q.put_nowait({"kind": "incident_update", "event": incident})
         except queue.Full:
             print("[NotificationManager] Очередь рассылки переполнена!")
 
+    def resolve_camera_alert(self, camera_id: str, title: Optional[str] = None) -> None:
+        """Сброс активного алерта при прекращении нарушения на камере."""
+        for k in list(self._active_camera_alerts.keys()):
+            if k[0] == camera_id and (title is None or k[1] == title):
+                self._active_camera_alerts.pop(k, None)
+
+    def reset_active_alerts(self) -> None:
+        """Сброс всех активных алертов."""
+        self._active_camera_alerts.clear()
+
     def update_incident_status(self, event_id: str, new_status: str, operator_name: Optional[str] = None) -> None:
         """Queue status updates for all channels that support message editing."""
+        if new_status in ("resolved", "dismissed"):
+            for k, v in list(self._active_camera_alerts.items()):
+                if v[0] == event_id:
+                    self._active_camera_alerts.pop(k, None)
+
         try:
             self.q.put_nowait({
                 "kind": "status_update",
@@ -151,16 +260,35 @@ class NotificationManager:
         if event_sev_lvl >= SEV_ORDER["critical"] and self.netio:
             self.netio.trigger_siren()
 
-        snap = snapshot_path
+        snap = snapshot_path if (snapshot_path and os.path.isfile(snapshot_path)) else None
         if not snap:
+            candidates = []
+            if snapshot_path:
+                candidates.append(snapshot_path)
             for k in ("snapshot_path", "snapshot_url", "image_key"):
                 val = event.get(k)
-                if val and isinstance(val, str):
-                    rel = val.replace("/static/snapshots/", "").lstrip("/\\")
-                    for base in (str(settings.LOCAL_SNAPSHOTS_DIR), os.path.join(str(BASE_DIR), "storage", "snapshots")):
-                        cand = os.path.join(base, rel)
-                        if os.path.isfile(cand):
-                            snap = cand
+                if val and val not in candidates:
+                    candidates.append(val)
+
+            for val in candidates:
+                if isinstance(val, str):
+                    if os.path.isfile(val):
+                        snap = val
+                        break
+                    rel = val.replace("/static/snapshots/", "").replace("/images/", "").lstrip("/\\")
+                    for base in (
+                        str(settings.LOCAL_SNAPSHOTS_DIR),
+                        os.path.join(str(BASE_DIR), "storage", "snapshots"),
+                        os.path.join(str(BASE_DIR), "frontend", "public", "images"),
+                        os.path.join(str(BASE_DIR), "frontend", "public"),
+                        os.path.join(str(BASE_DIR), "storage", "demo_snapshots"),
+                    ):
+                        for ext in ("", ".jpg", ".png", ".jpeg"):
+                            cand = os.path.join(base, rel + ext)
+                            if os.path.isfile(cand):
+                                snap = cand
+                                break
+                        if snap:
                             break
                 if snap:
                     break
@@ -278,6 +406,7 @@ class NotificationManager:
             is_verified = True
 
         try:
+            full_dict = None
             with SessionLocal() as db:
                 inc = db.scalar(select(Incident).where(Incident.id == event_id))
                 if inc:
@@ -287,12 +416,15 @@ class NotificationManager:
                         inc.contact_name = f"@{operator_name}"
                         inc.contact_role = "Оператор (Telegram)"
                     db.commit()
+                    db.refresh(inc)
+                    from app.services.incident_service import map_incident_to_read
+                    full_dict = map_incident_to_read(inc).model_dump(mode="json")
 
             # Refresh delivered notifications and remove channel-specific action controls.
             self.update_incident_status(event_id, db_status, operator_name)
 
             # Широковещательное обновление UI через WebSocket
-            update_payload = {
+            update_payload = full_dict or {
                 "id": event_id,
                 "status": db_status,
                 "is_verified": is_verified,
@@ -308,6 +440,32 @@ class NotificationManager:
             })
         except Exception as e:
             print(f"[NotificationManager] Ошибка синхронизации статуса с БД: {e}")
+
+    def sync_open_incidents(self) -> int:
+        """Синхронизирует открытые нарушения из журнала с подключенными каналами оповещений."""
+        from app.db.session import SessionLocal
+        from app.db.models.incident import Incident
+        from app.services.incident_service import map_incident_to_read
+        from sqlalchemy import select, desc
+
+        with SessionLocal() as db:
+            open_incs = db.scalars(
+                select(Incident)
+                .where(Incident.status.in_(("new", "working")))
+                .order_by(desc(Incident.created_at))
+                .limit(20)
+            ).all()
+
+            synced = 0
+            for inc in open_incs:
+                inc_dict = map_incident_to_read(inc).model_dump(mode="json")
+                deliveries = self.store.get_deliveries_for_event(inc.id)
+                if deliveries:
+                    self.refresh_incident(inc_dict)
+                else:
+                    self.dispatch_incident(inc_dict)
+                synced += 1
+            return synced
 
     def send_test(self, subscriber_id: Optional[int] = None) -> int:
         """Отправка тестового оповещения всем активным или конкретному подписчику."""
@@ -343,6 +501,7 @@ class NotificationManager:
             "netio": {"configured": bool(self.netio)},
             "subscribers": self.store.list_subscribers(),
             "stats": self.store.delivery_stats(),
+            "deliveries": self.store.list_deliveries(limit=25),
         }
 
 

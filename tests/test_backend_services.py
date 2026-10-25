@@ -100,7 +100,7 @@ def test_camera_hub_statuses_and_stale_detection():
     assert status_map["cam_stale"]["last_frame_age_seconds"] >= 14.0
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_camera_hub_mjpeg_generator():
     hub = CameraHub()
     hub.set_frame("cam_stream", b"\xff\xd8\xffframe1")

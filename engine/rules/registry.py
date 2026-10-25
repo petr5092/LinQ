@@ -62,7 +62,11 @@ def _build_configured_proximity(
     class_names: Dict[int, str],
 ) -> BaseRule:
     available_classes = set(class_names.values())
-    vehicles = row.get("vehicle_classes", ["forklift", "truck", "machinery", "car"])
+    default_vehicles = [
+        "forklift", "truck", "machinery", "car",
+        "excavators", "dump truck", "wheel loader", "mini-van",
+    ]
+    vehicles = row.get("vehicle_classes", default_vehicles)
     if "person" not in available_classes or not available_classes.intersection(vehicles):
         raise ValueError("Proximity requires person and a configured vehicle class")
     return ProximityRule(
@@ -77,19 +81,38 @@ def _build_configured_ppe(
     _camera: Dict[str, Any],
     class_names: Dict[int, str],
 ) -> BaseRule:
-    required = {"person"}
-    if row.get("require_helmet", True):
-        required.add("helmet")
-    if row.get("require_vest", True):
-        required.add("vest")
-    missing = required - set(class_names.values())
-    if missing:
-        raise ValueError(
-            f"PPE rule requires model classes: {sorted(missing)}. Disable unsupported rules."
-        )
+    available = set(class_names.values())
+    has_person = "person" in available
+
+    require_helmet = row.get("require_helmet", True)
+    require_vest = row.get("require_vest", True)
+
+    helmet_aliases = ("helmet", "hardhat")
+    no_helmet_aliases = ("no_helmet", "no-hardhat", "no_hardhat", "no-helmet")
+    vest_aliases = ("vest", "safety vest", "safety_vest")
+    no_vest_aliases = ("no_vest", "no-safety vest", "no_safety_vest", "no-vest")
+
+    h_class = next((c for c in helmet_aliases if c in available), None)
+    noh_class = next((c for c in no_helmet_aliases if c in available), None)
+    v_class = next((c for c in vest_aliases if c in available), None)
+    nov_class = next((c for c in no_vest_aliases if c in available), None)
+
+    has_ppe_classes = bool(h_class or noh_class or v_class or nov_class)
+    if not has_person and not has_ppe_classes:
+        raise ValueError("PPE rule requires 'person' or direct PPE model classes (helmet/hardhat/vest). Disable unsupported rules.")
+
+    if require_helmet and not (h_class or noh_class):
+        raise ValueError("PPE rule requires model classes for helmet/hardhat. Disable unsupported rules.")
+    if require_vest and has_person and not (v_class or nov_class):
+        raise ValueError("PPE rule requires model classes for vest/safety vest. Disable unsupported rules.")
+
     return PPEComplianceRule(
-        require_helmet=row.get("require_helmet", True),
-        require_vest=row.get("require_vest", True),
+        require_helmet=require_helmet,
+        require_vest=require_vest,
+        helmet_class=h_class or "helmet",
+        no_helmet_class=noh_class or "no_helmet",
+        vest_class=v_class or "vest",
+        no_vest_class=nov_class or "no_vest",
         severity=_configured_severity(row),
     )
 

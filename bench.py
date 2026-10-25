@@ -105,7 +105,7 @@ def main(argv=None):
     load_dotenv(ROOT / '.env')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config')
-    parser.add_argument('--backend', default='mock', choices=['mock', 'onnx', 'linq', 'onnx_cpu', 'linq_tpu'])
+    parser.add_argument('--backend', default='mock', choices=['mock', 'onnx', 'linq', 'onnx_cpu', 'linq_tpu', 'linq_fast_bridge', 'fast_bridge', 'bridge'])
     parser.add_argument('--model')
     parser.add_argument('--source', default='synthetic')
     parser.add_argument('--frames', type=int, default=200)

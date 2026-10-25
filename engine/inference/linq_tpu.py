@@ -28,10 +28,12 @@ class LinQTPUEngine(BaseInferenceEngine):
     def __init__(self, model_path: Optional[str] = None, conf_threshold: float = 0.35,
                  iou_threshold: float = 0.45, input_size: Tuple[int, int] = (640, 640),
                  class_names: Optional[Dict[int, str]] = None,
-                 adapter_module: Optional[str] = None, output_node_name: str = "output0"):
+                 adapter_module: Optional[str] = None, output_node_name: str = "output0",
+                 remote_url: Optional[str] = None, **kwargs: Any):
         super().__init__(model_path, conf_threshold, iou_threshold, input_size, class_names)
         self.adapter_module = adapter_module or os.getenv("LINQ_ADAPTER_MODULE", "linq_adapter")
         self.output_node_name = output_node_name
+        self.remote_url = remote_url
         self._runtime = None
         self.is_emulated = False  # This backend never emulates hardware.
         if self.model_path is not None:
@@ -45,7 +47,17 @@ class LinQTPUEngine(BaseInferenceEngine):
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Compiled LinQ TPU program not found: {path}")
         if not self.class_names:
-            raise ValueError("LINQ_TPU requires the complete class_names mapping from the trained ONNX model.")
+            default_classes_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "models", "onnx", "safety_yolov8n_classes.json"
+            )
+            if os.path.isfile(default_classes_path):
+                import json
+                with open(default_classes_path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                self.class_names = {int(k): v for k, v in raw.items()}
+            else:
+                raise ValueError("LINQ_TPU requires the complete class_names mapping from the trained ONNX model.")
         try:
             adapter = importlib.import_module(self.adapter_module)
         except ImportError as exc:

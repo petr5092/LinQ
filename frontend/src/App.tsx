@@ -15,8 +15,6 @@ import {
 
   CalendarDays,
 
-  Camera as CameraIcon,
-
   Check,
 
   ChevronDown,
@@ -34,6 +32,8 @@ import {
   DoorOpen,
 
   Download,
+
+  Eye,
 
   Factory,
 
@@ -122,6 +122,8 @@ import {
 
   statusLabels,
 
+  DEFAULT_MODEL_RULES,
+
   zoneRules,
 
   zoneWorkshop,
@@ -136,7 +138,7 @@ import {
 
 } from './data'
 
-import { api, type AnalyticsSummary } from '@/services/api'
+import { api, type AnalyticsSummary, type ThermalLatestFrame } from '@/services/api'
 
 
 
@@ -149,8 +151,6 @@ const navItems = [
   { key: 'events', label: 'Журнал событий', icon: List },
 
   { key: 'zones', label: 'Зоны и правила', icon: Map },
-
-  { key: 'access', label: 'Контроль доступа', icon: DoorOpen },
 
   { key: 'analytics', label: 'Аналитика', icon: Activity },
 
@@ -167,8 +167,6 @@ const pageTitles: Record<string, string> = {
   events: 'Журнал событий',
 
   zones: 'Зоны и правила',
-
-  access: 'Контроль доступа',
 
   analytics: 'Аналитика безопасности',
 
@@ -187,8 +185,6 @@ const pageDescriptions: Record<string, string> = {
   events: 'История обнаружений и работа с нарушениями.',
 
   zones: 'Сценарии контроля для каждого участка предприятия.',
-
-  access: 'Проверка СИЗ и допусков сотрудников перед проходом.',
 
   analytics: 'Нарушения, реакция и динамика безопасности.',
 
@@ -308,7 +304,7 @@ function resolveMediaImage(img?: string): string {
 
 function CameraView({
 
-  camera: _camera,
+  camera,
 
   event,
 
@@ -320,7 +316,7 @@ function CameraView({
 
   large = false,
 
-  showBoxes = true,
+  showBoxes = false,
 
   playing = false,
 
@@ -377,10 +373,31 @@ function CameraView({
 }) {
 
   const [mjpegFailed, setMjpegFailed] = useState(false)
+  const isThermal = camera?.cameraType === 'thermal' || camera?.id?.startsWith('THERMAL')
+  const [thermalFrame, setThermalFrame] = useState<ThermalLatestFrame | null>(null)
 
   useEffect(() => {
     setMjpegFailed(false)
   }, [mjpegUrl])
+
+  useEffect(() => {
+    if (!isThermal || !camera || !online || typeof api.getLatestThermalFrame !== 'function') return
+    let active = true
+    const poll = async () => {
+      try {
+        const frame = await api.getLatestThermalFrame(camera.id)
+        if (active && frame) setThermalFrame(frame)
+      } catch {
+        // ignore
+      }
+    }
+    poll()
+    const timer = setInterval(poll, 1500)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [isThermal, camera?.id, online])
 
   const active = event && isOpen(event)
 
@@ -455,6 +472,40 @@ function CameraView({
 
       ) : null}
 
+      {isThermal && online ? (
+        <img
+          className="thermal-heatmap"
+          src={thermalFrame?.heatmap_jpeg_base64 ? `data:image/jpeg;base64,${thermalFrame.heatmap_jpeg_base64}` : `/api/v1/thermal/cameras/${encodeURIComponent(camera?.id || '')}/heatmap.jpg`}
+          alt="Тепловизионная термограмма"
+          onError={(e) => {
+            (e.target as HTMLElement).style.display = 'none'
+          }}
+        />
+      ) : null}
+
+      {isThermal && online && thermalFrame?.measurements ? (
+        <div className="thermal-measurements">
+          {thermalFrame.measurements.map((m) => (
+            <div key={m.zone_id} className={`thermal-reading ${m.alarm ? 'alarm' : ''}`}>
+              <strong>{m.zone_name}</strong>
+              <span>T_max: {m.max_temperature_c.toFixed(1)}°C {m.alarm ? '⚠️ ПЕРЕГРЕВ' : '✓ норма'}</span>
+              <span>Перегрев при: ≥ {m.threshold_c.toFixed(1)}°C (T_mean: {m.mean_temperature_c.toFixed(1)}°C)</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {isThermal && online ? (
+        <div className="thermal-scale">
+          <span>20°C</span>
+          <i />
+          <span>120°C</span>
+          <span style={{ marginLeft: '6px', color: '#fef08a', fontWeight: 600 }}>
+            Перегрев при: ≥ {thermalFrame?.measurements?.[0]?.threshold_c?.toFixed(1) ?? '21.0'}°C
+          </span>
+        </div>
+      ) : null}
+
       <div className="camera-tint" />
 
       <div className="camera-overlay-top">
@@ -463,7 +514,7 @@ function CameraView({
 
           <i />
 
-          {online ? (showVideo ? (useMjpeg ? 'LINQ TPU LIVE' : 'LIVE ПОТОК') : (mode === 'snapshot' ? 'ПОСЛЕДНИЙ СКРИН' : 'LIVE')) : 'НЕТ СИГНАЛА'}
+          {online ? (isThermal ? 'ТЕПЛОВИЗОР · ИК-СПЕКТР' : showVideo ? (useMjpeg ? 'LINQ TPU LIVE' : 'LIVE ПОТОК') : (mode === 'snapshot' ? 'СТОП-КАДР' : 'LIVE')) : 'НЕТ СИГНАЛА'}
 
         </span>
 
@@ -531,7 +582,7 @@ function CameraView({
 
       ) : null}
 
-      <span className="camera-demo">{useMjpeg ? 'LINQ TPU ACCELERATED' : 'ДЕМОНСТРАЦИЯ'}</span>
+      <span className="camera-demo">{isThermal ? 'FLIR / MIKRON ИК' : useMjpeg ? 'LINQ TPU ACCELERATED' : 'ДЕМОНСТРАЦИЯ'}</span>
 
       {online ? (
 
@@ -683,7 +734,7 @@ function readEvents() {
 
   try {
 
-    const saved = JSON.parse(localStorage.getItem('tuk-tuk-events-v1') || 'null')
+    const saved = JSON.parse(localStorage.getItem('linqsec-events-v1') || localStorage.getItem('tuk-tuk-events-v1') || 'null')
 
     if (
 
@@ -751,7 +802,25 @@ export default function App() {
 
   const [view, setView] = useState('grid')
 
-  const [overviewTab, setOverviewTab] = useState<'snapshot' | 'cameras' | 'map'>('snapshot')
+  const [overviewTab, setOverviewTab] = useState<'traffic_light' | 'cameras' | 'map'>('traffic_light')
+
+  const [selectedTrafficCamera, setSelectedTrafficCamera] = useState<Camera | null>(null)
+
+  const [cameraList, setCameraList] = useState<Camera[]>(cameras)
+
+  useEffect(() => {
+    let active = true
+    if (typeof api.getCameras === 'function') {
+      api.getCameras().then((list) => {
+        if (active && Array.isArray(list) && list.length > 0) {
+          setCameraList(list)
+        }
+      })
+    }
+    return () => {
+      active = false
+    }
+  }, [])
 
   const [snapshotTimestamp, setSnapshotTimestamp] = useState<number>(() => Date.now())
 
@@ -771,7 +840,7 @@ export default function App() {
 
   const [toast, setToast] = useState('')
 
-  const [showBoxes, setShowBoxes] = useState(true)
+  const showBoxes = false
 
   const [notifyStatus, setNotifyStatus] = useState<any>(null)
 
@@ -782,6 +851,20 @@ export default function App() {
   const [cameraZoom, setCameraZoom] = useState(1)
 
   const [rulesEnabled, setRulesEnabled] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    let isMounted = true
+    if (typeof api.getNotificationZoneRules === 'function') {
+      api.getNotificationZoneRules().then((rules) => {
+        if (isMounted && rules && Object.keys(rules).length > 0) {
+          setRulesEnabled((prev) => ({ ...prev, ...rules }))
+        }
+      })
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const [customizerOpen, setCustomizerOpen] = useState(false)
 
@@ -823,11 +906,9 @@ export default function App() {
 
   const canCustomizeZones = !['employee', 'video-operator', 'shift-leader'].includes(accountId)
 
-  const canAccessControl = accountId !== 'employee'
-
   const canCustomizeTraining = ['safety-specialist', 'safety-inspector'].includes(accountId)
 
-  const siteCameras = cameras.filter((camera) => camera.site === siteId)
+  const siteCameras = cameraList.filter((camera) => camera.site === siteId)
 
   const siteEvents = events.filter((event) => event.site === siteId)
 
@@ -973,7 +1054,7 @@ export default function App() {
 
     try {
 
-      localStorage.setItem('tuk-tuk-events-v1', JSON.stringify(events.map(({ id, status }) => ({ id, status }))))
+      localStorage.setItem('linqsec-events-v1', JSON.stringify(events.map(({ id, status }) => ({ id, status }))))
 
     } catch {
 
@@ -987,7 +1068,7 @@ export default function App() {
 
   useEffect(() => {
 
-    document.title = `Тук-Тук · ${pageTitles[page]}`
+    document.title = `LinQsec · ${pageTitles[page]}`
 
   }, [page])
 
@@ -1185,8 +1266,6 @@ useEffect(() => {
 
     setAccountId(id)
 
-    if (id === 'employee' && page === 'access') navigate('overview')
-
     if (['employee', 'video-operator', 'shift-leader'].includes(id)) setCustomizerOpen(false)
 
     if (!['safety-specialist', 'safety-inspector'].includes(id)) setTrainingCustomizeOpen(false)
@@ -1201,7 +1280,7 @@ useEffect(() => {
 
   const downloadTrainingHandout = () => {
 
-    const content = `ТУК-ТУК · ПАМЯТКА ПО БЕЗОПАСНОСТИ\n\n1. Используйте каску и средства защиты органов дыхания.\n2. Не проходите под подвешенным грузом.\n3. Держите проходы свободными.\n4. Сообщайте оператору видеонаблюдения о нарушениях.`
+    const content = `LINQSEC · ПАМЯТКА ПО БЕЗОПАСНОСТИ\n\n1. Используйте каску и средства защиты органов дыхания.\n2. Не проходите под подвешенным грузом.\n3. Держите проходы свободными.\n4. Сообщайте оператору видеонаблюдения о нарушениях.`
 
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
 
@@ -1211,7 +1290,7 @@ useEffect(() => {
 
     link.href = url
 
-    link.download = 'tuk-tuk-pamyatka-po-bezopasnosti.txt'
+    link.download = 'linqsec-pamyatka-po-bezopasnosti.txt'
 
     link.click()
 
@@ -1589,17 +1668,17 @@ useEffect(() => {
 
           <button
 
-            className={`snapshot-toggle-btn ${overviewTab === 'snapshot' ? 'active' : ''}`}
+            className={`snapshot-toggle-btn ${overviewTab === 'traffic_light' ? 'active' : ''}`}
 
-            onClick={() => setOverviewTab(overviewTab === 'snapshot' ? 'cameras' : 'snapshot')}
+            onClick={() => setOverviewTab(overviewTab === 'traffic_light' ? 'cameras' : 'traffic_light')}
 
-            title="Показать последний скриншот"
+            title="Показать светофор состояния камер"
 
           >
 
-            <CameraIcon size={14} />
+            <Activity size={14} />
 
-            <span>Последний скрин</span>
+            <span>Светофор</span>
 
           </button>
 
@@ -1608,26 +1687,6 @@ useEffect(() => {
             <i /> Прямой эфир
 
           </span>
-
-          <button
-
-            className={`icon-button ${showBoxes ? 'selected' : ''}`}
-
-            title="Показать или скрыть детекции"
-
-            aria-label="Показать или скрыть детекции"
-
-            data-tooltip="Показать или скрыть детекции"
-
-            aria-pressed={showBoxes}
-
-            onClick={() => setShowBoxes((v) => !v)}
-
-          >
-
-            <Sparkles size={16} />
-
-          </button>
 
         </div>
 
@@ -1717,7 +1776,7 @@ useEffect(() => {
 
                   showBoxes={showBoxes}
 
-                  mode={page === 'overview' && overviewTab === 'snapshot' ? 'snapshot' : 'live'}
+                  mode="live"
 
                   latestSnapshotUrl={camera.id === 'CAM-01' ? `/api/v1/cameras/CAM-01/frame.jpg?t=${snapshotTimestamp}` : undefined}
 
@@ -1995,170 +2054,133 @@ useEffect(() => {
 
   )
 
-  const latestCam = siteCameras.find((c) => c.id === 'CAM-01') || siteCameras[0]
+  const getCameraTrafficInfo = (cam: Camera) => {
+    const camEvents = events.filter((e) => e.camera === cam.id)
+    const active = camEvents.filter((e) => e.status === 'new' || e.status === 'working')
+    const hasCritical = active.some((e) => e.severity === 'critical')
+    const hasWarning = !hasCritical && active.some((e) => e.severity === 'warning')
+    const statusColor: 'red' | 'yellow' | 'green' = hasCritical ? 'red' : hasWarning ? 'yellow' : 'green'
 
-  const latestIncident = siteEvents.find((e) => e.camera === latestCam?.id) || siteEvents.find(isOpen) || siteEvents[0]
+    const primaryEvent = active.find((e) => hasCritical ? e.severity === 'critical' : e.severity === 'warning') || active[0] || camEvents[0]
 
+    let statusText = 'В норме · нарушений нет'
+    if (cam.cameraType === 'thermal') {
+      const threshold = 21.0
+      if (statusColor === 'red') {
+        statusText = `Критический перегрев (T ≥ ${threshold.toFixed(1)}°C): ${primaryEvent?.title || 'Превышение порога'}`
+      } else if (statusColor === 'yellow') {
+        statusText = `Внимание: перегрев (порог T ≥ ${threshold.toFixed(1)}°C)`
+      } else {
+        statusText = `В норме · Перегрев при: T ≥ ${threshold.toFixed(1)}°C`
+      }
+    } else {
+      if (statusColor === 'red') {
+        statusText = `Критично: ${primaryEvent?.title || 'Аварийный режим'}`
+      } else if (statusColor === 'yellow') {
+        statusText = `Внимание: ${primaryEvent?.title || 'Отклонение от регламента'}`
+      }
+    }
 
+    return {
+      statusColor,
+      statusText,
+      activeCount: active.length,
+      primaryEvent,
+      hasCritical,
+      hasWarning,
+      thermalThreshold: cam.cameraType === 'thermal' ? 21.0 : undefined,
+    }
+  }
 
-  const latestSnapshotHero = (
-
-    <div className="latest-snapshot-hero">
-
-      <div
-
-        className="latest-snapshot-preview"
-
-        role="button"
-
-        tabIndex={0}
-
-        aria-label={`Открыть прямой эфир камеры ${latestCam?.id}`}
-
-        onClick={() => {
-
-          if (latestCam) setInspectedCamera(latestCam)
-
-        }}
-
-      >
-
-        <CameraView
-
-          camera={latestCam}
-
-          event={latestIncident}
-
-          image={latestIncident?.image ?? latestCam?.image ?? 'construction'}
-
-          video={latestCam?.video}
-
-          online={latestCam?.online}
-
-          showBoxes={showBoxes}
-
-          mode="snapshot"
-
-          latestSnapshotUrl={`/api/v1/cameras/CAM-01/frame.jpg?t=${snapshotTimestamp}`}
-
-        />
-
-        <span className="expand-camera" style={{ opacity: 0.9 }}>
-
-          <Maximize2 size={18} />
-
+  const trafficLightView = (
+    <div className="traffic-light-container">
+      <div className="traffic-summary-bar">
+        <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155', marginRight: '4px' }}>
+          Светофор безопасности производственных процессов:
         </span>
-
+        {(() => {
+          const infos = siteCameras.map((c) => getCameraTrafficInfo(c))
+          const redC = infos.filter((i) => i.statusColor === 'red').length
+          const yellowC = infos.filter((i) => i.statusColor === 'yellow').length
+          const greenC = infos.filter((i) => i.statusColor === 'green').length
+          return (
+            <>
+              <span className="traffic-summary-pill red">● Критично: {redC}</span>
+              <span className="traffic-summary-pill yellow">● Внимание: {yellowC}</span>
+              <span className="traffic-summary-pill green">● В норме: {greenC}</span>
+              <span style={{ fontSize: '12px', color: '#64748b', marginLeft: 'auto' }}>
+                Всего камер под контролем: {siteCameras.length}
+              </span>
+            </>
+          )
+        })()}
       </div>
 
-      <div className="latest-snapshot-info">
-
-        <div className="latest-snapshot-badge" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-
-          <CameraIcon size={13} />
-
-          <span>Последний скриншот системы безопасности · LinQ TPU / ONNX Stream</span>
-
-          <span className="small-dot green" style={{ width: '6px', height: '6px' }} />
-
-        </div>
-
-        <div className="latest-snapshot-title">
-
-          {latestCam?.name} — Стоп-кадр нейросетевого потока
-
-        </div>
-
-        <div className="latest-snapshot-meta">
-
-          <div>
-
-            <span>Источник кадра:</span>
-
-            <strong style={{ color: '#2563eb' }}>LinQ TPU / ONNX Stream</strong>
-
-          </div>
-
-          <div>
-
-            <span>Камера:</span>
-
-            <strong>{latestCam?.name} ({latestCam?.id})</strong>
-
-          </div>
-
-          <div>
-
-            <span>Участок / Зона:</span>
-
-            <strong>{latestCam?.workshop} · {latestCam?.zone}</strong>
-
-          </div>
-
-          <div>
-
-            <span>Время стоп-кадра:</span>
-
-            <strong>23.10.2026 {latestIncident?.time ?? '14:32:08'}</strong>
-
-          </div>
-
-          <div>
-
-            <span>Модель нейросети:</span>
-
-            <strong style={{ color: '#15803d' }}>YOLOv8n PPE · LinQ TPU (H1M) / LocalONNX</strong>
-
-          </div>
-
-        </div>
-
-        <div className="latest-snapshot-actions">
-
-          <Button
-
-            size="sm"
-
-            onClick={() => {
-
-              if (latestCam) setInspectedCamera(latestCam)
-
-            }}
-
-          >
-
-            <Play size={14} style={{ fill: 'currentColor', marginRight: 6 }} />
-
-            Открыть прямой эфир (MJPEG)
-
-          </Button>
-
-          {latestIncident && (
-
-            <Button
-
-              variant="outline"
-
-              size="sm"
-
-              onClick={() => setSelectedId(latestIncident.id)}
-
+      <div className="traffic-grid">
+        {siteCameras.map((cam) => {
+          const info = getCameraTrafficInfo(cam)
+          return (
+            <div
+              key={cam.id}
+              role="button"
+              tabIndex={0}
+              className={`traffic-card status-${info.statusColor}`}
+              onClick={() => setSelectedTrafficCamera(cam)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setSelectedTrafficCamera(cam)
+                }
+              }}
+              aria-label={`Светофор камеры ${cam.name} (${cam.id}): состояние ${info.statusColor === 'red' ? 'критично' : info.statusColor === 'yellow' ? 'внимание' : 'в норме'}. Показать скрин нарушения.`}
             >
+              <span className={`traffic-status-circle ${info.statusColor}`} aria-hidden="true" />
 
-              <TriangleAlert size={14} style={{ marginRight: 6 }} />
+              <div className="traffic-info">
+                <div className="traffic-header">
+                  <span className="traffic-title" title={cam.name}>
+                    {cam.name}
+                  </span>
+                  <span className="traffic-workshop">
+                    {cam.workshop} · {cam.zone}
+                  </span>
+                </div>
 
-              Детали инцидента ({latestIncident.id})
+                <div className={`traffic-status-desc status-${info.statusColor}`}>
+                  {info.statusColor === 'red' ? '🔴 ' : info.statusColor === 'yellow' ? '🟡 ' : '🟢 '}
+                  {info.statusText}
+                </div>
 
-            </Button>
+                <div className="traffic-card-footer">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {cam.cameraType === 'thermal' ? (
+                      <>
+                        <span className="traffic-badge thermal">Тепловизор</span>
+                        <span className="traffic-badge thermal" style={{ color: '#b45309' }}>
+                          Порог: T ≥ 21.0°C
+                        </span>
+                      </>
+                    ) : (
+                      <span className="traffic-badge tpu">LinQ TPU</span>
+                    )}
+                    <span className="camera-id">{cam.id}</span>
+                    {info.activeCount > 0 ? (
+                      <span style={{ fontSize: '10px', color: info.statusColor === 'red' ? '#dc2626' : '#d97706', fontWeight: 600 }}>
+                        {info.activeCount} акт.
+                      </span>
+                    ) : null}
+                  </div>
 
-          )}
-
-        </div>
-
+                  <span className="traffic-btn-preview">
+                    <Eye size={13} /> Скрин нарушения
+                  </span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </div>
-
     </div>
-
   )
 
 
@@ -2173,9 +2195,9 @@ useEffect(() => {
 
           <div className="brand">
 
-            <img src="/logo.svg" alt="Тук-Тук логотип" />
 
-            Тук-Тук<span className="brand-dot">.</span>
+
+            LinQsec<span className="brand-dot">.</span>
 
           </div>
 
@@ -2241,7 +2263,7 @@ useEffect(() => {
 
         <nav aria-label="Основная навигация">
 
-          {navItems.filter(({ key }) => key !== 'access' || canAccessControl).map(({ key, label, icon: Icon }) => (
+          {navItems.map(({ key, label, icon: Icon }) => (
 
             <button
 
@@ -2270,39 +2292,6 @@ useEffect(() => {
         </nav>
 
         <div className="sidebar-bottom">
-
-          <div className="linq-card">
-
-            <div>
-
-              <span className="linq-logo">
-
-                LinQ<span>TPU</span>
-
-              </span>
-
-              <span className="linq-status">
-
-                <i /> В сети
-
-              </span>
-
-            </div>
-
-            <p>YOLOv8n-pose · инференс на плате</p>
-
-            <div className="linq-meta">
-
-              <span>H1M · 24.2 FPS</span>
-
-              <span>·</span>
-
-              <span>Задержка 41мс</span>
-
-            </div>
-
-          </div>
-
           <button
 
             className={`nav-item ${page === 'settings' ? 'active' : ''}`}
@@ -2505,13 +2494,13 @@ useEffect(() => {
 
                 <button
 
-                  className={overviewTab === 'snapshot' ? 'active' : ''}
+                  className={overviewTab === 'traffic_light' ? 'active' : ''}
 
-                  onClick={() => setOverviewTab('snapshot')}
+                  onClick={() => setOverviewTab('traffic_light')}
 
                 >
 
-                  <CameraIcon size={16} /> Последний скрин
+                  <Activity size={16} /> Светофор
 
                 </button>
 
@@ -2551,11 +2540,11 @@ useEffect(() => {
 
                 map
 
-              ) : overviewTab === 'snapshot' ? (
+              ) : overviewTab === 'traffic_light' ? (
 
                 <>
 
-                  {latestSnapshotHero}
+                  {trafficLightView}
 
                   {cameraGrid}
 
@@ -2702,7 +2691,7 @@ useEffect(() => {
 
                   <strong>У каждой зоны — свои правила безопасности</strong>
 
-                  <p>Включайте сценарии для участка. Изменения в прототипе применяются только к настройкам интерфейса.</p>
+                  <p>Управляйте отправкой уведомлений по участкам. Выключение сценария блокирует рассылку алертов (Telegram / NetIO) для выбранной зоны.</p>
 
                 </div>
 
@@ -2954,7 +2943,7 @@ useEffect(() => {
 
                       </div>
 
-                      {[...(zoneRules[z] ?? []), ...(customRules[z] ?? [])].map((rule) => (
+                      {[...(zoneRules[z] ?? DEFAULT_MODEL_RULES), ...(customRules[z] ?? [])].map((rule) => (
 
                         <div className="rule-row" key={rule}>
 
@@ -3006,6 +2995,8 @@ useEffect(() => {
 
                               if (customizerOpen) setCustomizerDirty(true)
 
+                              api.setNotificationZoneRule(z, rule, v)
+
                             }}
 
                           />
@@ -3019,176 +3010,6 @@ useEffect(() => {
                   )
 
                 })}
-
-              </div>
-
-            </>
-
-          ) : null}
-
-          {page === 'access' ? (
-
-            <>
-
-              <div className="access-intro">
-
-                <div className="access-shield">
-
-                  <ShieldCheck size={32} />
-
-                </div>
-
-                <div>
-
-                  <h2>Контроль допуска и защитной экипировки</h2>
-
-                  <p>
-
-                    Система на базе LinQ AI в реальном времени проверяет сотрудников перед турникетом: наличие каски,
-
-                    светоотражающего жилета, защитных очков и статус в СКУД.
-
-                  </p>
-
-                </div>
-
-                <div className="access-stats">
-
-                  <div>
-
-                    <strong>99.4%</strong>
-
-                    <span>точность распознавания СИЗ</span>
-
-                  </div>
-
-                  <div>
-
-                    <strong>0.3 с</strong>
-
-                    <span>время проверки перед турникетом</span>
-
-                  </div>
-
-                  <div>
-
-                    <strong>1 420</strong>
-
-                    <span>проходов за сегодня</span>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-
-
-              <div className="access-events">
-
-                <div className="section-heading">
-
-                  <div>
-
-                    <h2>Журнал проходной</h2>
-
-                    <p>События на турникетах КПП-1 и КПП-2</p>
-
-                  </div>
-
-                  <span className="live-text">
-
-                    <i /> Режим онлайн-верификации
-
-                  </span>
-
-                </div>
-
-                <div className="access-event-list">
-
-                  {events
-
-                    .filter((e) => e.type === 'access')
-
-                    .map((e) => (
-
-                      <article
-
-                        className={`access-event ${e.severity}`}
-
-                        key={e.id}
-
-                        onClick={() => setSelectedId(e.id)}
-
-                        style={{ cursor: 'pointer' }}
-
-                      >
-
-                        <EventIcon event={e} />
-
-                        <div>
-
-                          <div className="access-event-title">
-
-                            <strong>{e.title}</strong>
-
-                            <SeverityBadge severity={e.severity} />
-
-                          </div>
-
-                          <p>{e.description}</p>
-
-                          <span>
-
-                            <span>{e.zone}</span> · <time>{e.time}</time> · <span>Сотрудник: {e.employee?.name ?? '—'}</span>
-
-                          </span>
-
-                        </div>
-
-                        <StatusBadge status={e.status} />
-
-                      </article>
-
-                    ))}
-
-                </div>
-
-              </div>
-
-
-
-              <div className="access-explainer">
-
-                <section>
-
-                  <h3>Как работает проверка</h3>
-
-                  <p>
-
-                    Камера на проходной захватывает силуэт сотрудника. Нейросеть LinQ TPU классифицирует наличие каждого
-
-                    элемента СИЗ. Если элемент отсутствует, турникет остаётся заблокированным, а на дисплее сотрудника
-
-                    появляется предупреждение.
-
-                  </p>
-
-                </section>
-
-                <section>
-
-                  <h3>Интеграция со СКУД</h3>
-
-                  <p>
-
-                    Данные оптической верификации сопоставляются с идентификатором пропуска. При несовпадении или попытке
-
-                    прохода по чужому пропуску система мгновенно сигнализирует сотрудникам службы безопасности.
-
-                  </p>
-
-                </section>
 
               </div>
 
@@ -4168,6 +3989,8 @@ useEffect(() => {
 
                     onClick={() => {
 
+                      localStorage.removeItem('linqsec-events-v1')
+
                       localStorage.removeItem('tuk-tuk-events-v1')
 
                       setEvents(initialEvents)
@@ -4212,7 +4035,7 @@ useEffect(() => {
 
                       a.href = url
 
-                      a.download = `tuk-tuk-settings-${siteId}.json`
+                      a.download = `linqsec-settings-${siteId}.json`
 
                       a.click()
 
@@ -4438,7 +4261,105 @@ useEffect(() => {
 
       ) : null}
 
+      {/* Светофор безопасности: модальное окно последнего скрина нарушения */}
+      {selectedTrafficCamera ? (() => {
+        const cam = selectedTrafficCamera
+        const info = getCameraTrafficInfo(cam)
+        const ev = info.primaryEvent
+        const snapshotUrl = ev?.image
+          ? resolveMediaImage(ev.image)
+          : `/api/v1/cameras/${encodeURIComponent(cam.id)}/snapshot.jpg?t=${snapshotTimestamp}`
 
+        return (
+          <Dialog open={true} onOpenChange={(open) => { if (!open) setSelectedTrafficCamera(null) }}>
+            <DialogContent className="traffic-dialog-content">
+              <DialogHeader>
+                <DialogTitle style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>Светофор безопасности · Стоп-кадр нарушения</span>
+                  <span className={`traffic-summary-pill ${info.statusColor}`} style={{ fontSize: '11px', padding: '3px 10px' }}>
+                    {info.statusColor === 'red' ? '🔴 КРИТИЧНО' : info.statusColor === 'yellow' ? '🟡 ВНИМАНИЕ' : '🟢 В НОРМЕ'}
+                  </span>
+                </DialogTitle>
+                <DialogDescription>
+                  Камера: <strong>{cam.name} ({cam.id})</strong> · Участок: <strong>{cam.workshop} · {cam.zone}</strong>
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="traffic-snapshot-preview">
+                <img
+                  src={snapshotUrl}
+                  alt={`Стоп-кадр нарушения камеры ${cam.id}`}
+                  onError={(e) => {
+                    const fallback = resolveMediaImage(cam.image)
+                    if ((e.target as HTMLImageElement).src !== fallback) {
+                      (e.target as HTMLImageElement).src = fallback
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="traffic-event-details">
+                {cam.cameraType === 'thermal' ? (
+                  <div style={{ padding: '9px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '12px', color: '#92400e', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <strong>Критерий перегрева тепловизора:</strong>
+                      <span style={{ fontWeight: 700, color: '#b45309' }}>Порог: T ≥ 21.0°C</span>
+                    </div>
+                    <span>
+                      Аварийный перегрев фиксируется при превышении температуры поверхности 21.0°C в контрольной зоне OSF. Сброс тревоги происходит при охлаждении до 20.0°C.
+                    </span>
+                  </div>
+                ) : null}
+
+                {ev ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '14px', color: '#0f172a' }}>
+                        {ev.title}
+                      </strong>
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>
+                        Время: 23.10.2026 {ev.time}
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#334155' }}>
+                      {ev.description}
+                    </p>
+                    {ev.action ? (
+                      <div style={{ padding: '8px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', fontSize: '12px', color: '#1e40af' }}>
+                        <strong>Рекомендуемое действие:</strong> {ev.action}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div style={{ padding: '12px', color: '#047857', fontSize: '13px' }}>
+                    ✓ На данной камере в текущую смену нарушений не зафиксировано. Процесс протекает штатно.
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedTrafficCamera(null)}
+                >
+                  Закрыть
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setInspectedCamera(cam)
+                    setSelectedTrafficCamera(null)
+                  }}
+                >
+                  <Play size={14} style={{ fill: 'currentColor', marginRight: 6 }} />
+                  Перейти к прямому эфиру камеры
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )
+      })() : null}
 
       {/* Real-time Camera Inspection Dialog with MJPEG / Neural telemetry */}
 
@@ -4475,6 +4396,16 @@ useEffect(() => {
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
 
                       LinQ TPU (ONLINE)
+
+                    </span>
+
+                  )}
+
+                  {inspectedCamera.cameraType === 'thermal' && (
+
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+
+                      ТЕПЛОВИЗОР · Перегрев: T ≥ 21.0°C
 
                     </span>
 
