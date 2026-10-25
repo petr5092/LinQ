@@ -58,7 +58,8 @@ data/*_outbox/
 data/cv_*.jsonl
 !data/.gitkeep
 !data/.gitignore
-bench_results.json
+
+# Runtime Storage
 storage/*.sqlite3
 storage/*.db
 storage/snapshots/*
@@ -72,6 +73,12 @@ models/onnx/*.onnx
 models/tpu/*.tpu
 !models/onnx/.gitkeep
 !models/tpu/.gitkeep
+
+# Hardware benchmark results & model evaluation metrics
+!bench_results.json
+!bench_results*.json
+!benchmarks/*.json
+!models/**/*.metrics.json
 
 # Testing & Coverage
 .coverage

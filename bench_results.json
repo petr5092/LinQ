@@ -1,0 +1,47 @@
+{
+  "recorded_at_utc": "2026-10-25T01:38:40.241920+00:00",
+  "backend": "LINQ_FAST_BRIDGE",
+  "is_emulated": false,
+  "model_path": "bridge://hackathon73916",
+  "model_sha256": null,
+  "input_size_wh": [
+    640,
+    640
+  ],
+  "class_names": {},
+  "source": "synthetic",
+  "synthetic_input": true,
+  "frames_requested": 5,
+  "frames_evaluated": 5,
+  "warmup_frames": 1,
+  "complete": true,
+  "inference_call_latency_ms": {
+    "mean": 384.6,
+    "p50": 344.0,
+    "p95": 522.0,
+    "min": 297.0,
+    "max": 547.0
+  },
+  "preprocess_mean_ms": 2.9999999998835847,
+  "postprocess_mean_ms": 0.0,
+  "total_latency_ms": {
+    "mean": 384.524,
+    "p50": 347.566,
+    "p95": 516.161,
+    "min": 300.752,
+    "max": 539.43
+  },
+  "decode_and_inference_latency_ms": {
+    "mean": 386.735,
+    "p50": 349.354,
+    "p95": 518.483,
+    "min": 303.846,
+    "max": 541.883
+  },
+  "throughput_fps": 2.600618177343679,
+  "decode_and_inference_fps": 2.585747123961756,
+  "python": "3.10.0",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "note": "LinQ adapter call including transfers and synchronization; verify physical hardware on the stand",
+  "scope": "Single stream. Excludes tracking, rules, storage, network delivery and GUI latency. Does not prove multi-camera capacity."
+}
