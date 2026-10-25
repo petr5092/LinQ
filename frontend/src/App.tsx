@@ -79,6 +79,8 @@ import {
 
   Sparkles,
 
+  Thermometer,
+
   Trash2,
 
   TriangleAlert,
@@ -375,6 +377,11 @@ function CameraView({
   const [mjpegFailed, setMjpegFailed] = useState(false)
   const isThermal = camera?.cameraType === 'thermal' || camera?.id?.startsWith('THERMAL')
   const [thermalFrame, setThermalFrame] = useState<ThermalLatestFrame | null>(null)
+  const [thermalImgFailed, setThermalImgFailed] = useState(false)
+
+  useEffect(() => {
+    setThermalImgFailed(false)
+  }, [thermalFrame?.heatmap_jpeg_base64])
 
   useEffect(() => {
     setMjpegFailed(false)
@@ -422,11 +429,9 @@ function CameraView({
       className={`camera-view ${large ? 'large' : ''} ${online ? '' : 'offline'}`}
 
       style={{
-
-        backgroundImage: `url(${snapshotImage})`,
-
+        backgroundImage: isThermal ? undefined : `url(${snapshotImage})`,
+        backgroundColor: isThermal ? '#0f172a' : undefined,
         backgroundSize: large && zoom > 1 ? `${zoom * 100}%` : undefined,
-
       }}
 
     >
@@ -473,14 +478,24 @@ function CameraView({
       ) : null}
 
       {isThermal && online ? (
-        <img
-          className="thermal-heatmap"
-          src={thermalFrame?.heatmap_jpeg_base64 ? `data:image/jpeg;base64,${thermalFrame.heatmap_jpeg_base64}` : `/api/v1/thermal/cameras/${encodeURIComponent(camera?.id || '')}/heatmap.jpg`}
-          alt="Тепловизионная термограмма"
-          onError={(e) => {
-            (e.target as HTMLElement).style.display = 'none'
-          }}
-        />
+        (thermalFrame?.heatmap_jpeg_base64 || thermalFrame) && !thermalImgFailed ? (
+          <img
+            className="thermal-heatmap"
+            src={
+              thermalFrame?.heatmap_jpeg_base64
+                ? `data:image/jpeg;base64,${thermalFrame.heatmap_jpeg_base64}`
+                : `/api/v1/thermal/cameras/${encodeURIComponent(camera?.id || '')}/heatmap.jpg`
+            }
+            alt="Тепловизионная термограмма"
+            onError={() => setThermalImgFailed(true)}
+          />
+        ) : (
+          <div className="thermal-empty">
+            <Thermometer size={28} className="animate-pulse" style={{ color: '#f59e0b' }} />
+            <strong style={{ fontSize: '13px' }}>Тепловизор · ИК-спектр</strong>
+            <span>{thermalImgFailed ? 'Ошибка отображения термограммы' : 'Получение радиометрического кадра...'}</span>
+          </div>
+        )
       ) : null}
 
       {isThermal && online && thermalFrame?.measurements ? (
@@ -1068,7 +1083,7 @@ export default function App() {
 
   useEffect(() => {
 
-    document.title = `LinQsec · ${pageTitles[page]}`
+    document.title = `LenQsec · ${pageTitles[page]}`
 
   }, [page])
 
@@ -1280,7 +1295,7 @@ useEffect(() => {
 
   const downloadTrainingHandout = () => {
 
-    const content = `LINQSEC · ПАМЯТКА ПО БЕЗОПАСНОСТИ\n\n1. Используйте каску и средства защиты органов дыхания.\n2. Не проходите под подвешенным грузом.\n3. Держите проходы свободными.\n4. Сообщайте оператору видеонаблюдения о нарушениях.`
+    const content = `LENQSEC · ПАМЯТКА ПО БЕЗОПАСНОСТИ\n\n1. Используйте каску и средства защиты органов дыхания.\n2. Не проходите под подвешенным грузом.\n3. Держите проходы свободными.\n4. Сообщайте оператору видеонаблюдения о нарушениях.`
 
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
 
@@ -1290,7 +1305,7 @@ useEffect(() => {
 
     link.href = url
 
-    link.download = 'linqsec-pamyatka-po-bezopasnosti.txt'
+    link.download = 'lenqsec-pamyatka-po-bezopasnosti.txt'
 
     link.click()
 
@@ -2197,7 +2212,7 @@ useEffect(() => {
 
 
 
-            LinQsec<span className="brand-dot">.</span>
+            LenQsec<span className="brand-dot">.</span>
 
           </div>
 
@@ -4035,7 +4050,7 @@ useEffect(() => {
 
                       a.href = url
 
-                      a.download = `linqsec-settings-${siteId}.json`
+                      a.download = `lenqsec-settings-${siteId}.json`
 
                       a.click()
 
@@ -4268,7 +4283,9 @@ useEffect(() => {
         const ev = info.primaryEvent
         const snapshotUrl = ev?.image
           ? resolveMediaImage(ev.image)
-          : `/api/v1/cameras/${encodeURIComponent(cam.id)}/snapshot.jpg?t=${snapshotTimestamp}`
+          : cam.cameraType === 'thermal'
+            ? `/api/v1/thermal/cameras/${encodeURIComponent(cam.id)}/heatmap.jpg`
+            : `/api/v1/cameras/${encodeURIComponent(cam.id)}/snapshot.jpg?t=${snapshotTimestamp}`
 
         return (
           <Dialog open={true} onOpenChange={(open) => { if (!open) setSelectedTrafficCamera(null) }}>
@@ -4290,6 +4307,7 @@ useEffect(() => {
                   src={snapshotUrl}
                   alt={`Стоп-кадр нарушения камеры ${cam.id}`}
                   onError={(e) => {
+                    if (cam.cameraType === 'thermal') return
                     const fallback = resolveMediaImage(cam.image)
                     if ((e.target as HTMLImageElement).src !== fallback) {
                       (e.target as HTMLImageElement).src = fallback

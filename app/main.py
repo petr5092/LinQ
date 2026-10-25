@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     - Первичное наполнение справочниками (seed) при пустой БД
     - Запуск менеджера фоновых уведомлений
     """
-    logger.info("=== Запуск LinQ Safety Guard Backend ===")
+    logger.info("=== Запуск LenQsec Backend ===")
     logger.info(f"Режим отладки (DEBUG): {settings.DEBUG}")
     logger.info(f"Бэкенд инференса: {settings.INFERENCE_BACKEND}")
     logger.info(f"Тип хранилища снапшотов: {settings.STORAGE_TYPE}")
@@ -123,7 +123,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    logger.info("=== Остановка LinQ Safety Guard Backend ===")
+    logger.info("=== Остановка LenQsec Backend ===")
     if thermal_sim_task:
         thermal_stop_event.set()
         try:
@@ -146,8 +146,8 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description=(
-        "Комплексный сервис видеоаналитики и промышленной безопасности на базе LinQ TPU. "
-        "REST API для операторского интерфейса, интеграции с CV Engine и WebSockets оповещений."
+        "LenQsec — Комплексный сервис видеоаналитики и промышленной безопасности на базе LinQ TPU. "
+        "REST API для операторского интерфейса, интеграции с CV Engine, радиометрических тепловизоров и WebSockets оповещений."
     ),
     docs_url="/docs",
     redoc_url="/redoc",

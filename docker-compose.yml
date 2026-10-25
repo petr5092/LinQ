@@ -2,18 +2,18 @@ services:
   # 1. Реляционная база данных PostgreSQL 16
   postgres:
     image: postgres:16-alpine
-    container_name: linq_postgres
+    container_name: lenqsec_postgres
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-linq_safety}
+      POSTGRES_DB: ${POSTGRES_DB:-lenqsec}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-linq_safety}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-lenqsec}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: linq_backend
+    container_name: lenqsec_backend
     restart: always
     depends_on:
       postgres:
@@ -38,7 +38,7 @@ services:
       - HTTPS_PROXY=${DOCKER_HTTPS_PROXY:-http://host.docker.internal:7890}
       - HTTP_PROXY=${DOCKER_HTTP_PROXY:-http://host.docker.internal:7890}
       - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,postgres,backend,minio}
-      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-linq_safety}
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-lenqsec}
       - INFERENCE_BACKEND=${INFERENCE_BACKEND:-ONNX_CPU}
       - ONNX_MODEL_PATH=models/onnx/safety_yolov8n.onnx
       - TPU_MODEL_PATH=models/tpu/safety_yolov8_h1m.tpu

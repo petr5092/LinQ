@@ -1,20 +1,29 @@
-# LinQ CV — detector training
+# LenQsec CV — Дообучение детекторов и экспорт моделей под LinQ TPU
 
-This module is **independent of the web backend**. It fine-tunes a YOLOv8 detect model,
-validates a standard YOLO dataset and exports a raw detect ONNX for the existing
-`feature/cv-pipeline` inference adapter. It does not train on LinQ TPU; LinQ TPU
-is used downstream for inference.
+Модуль предназначен для подготовки датасетов, дообучения нейросетевых моделей детекции (YOLOv8/YOLO11) и экспорта оптимизированных ONNX-графов для последующей компиляции в бинарный формат отечественных ИИ-ускорителей **LinQ TPU (H1M)**.
 
-## Dataset layout
+Данный модуль **полностью автономен** и запускается на рабочей станции с графическим ускорителем (GPU / CUDA). Компиляция в формат LinQ TPU (`.tpu`) выполняется downstream-инструментами `linq_tools/compile_model.py`.
 
-```
+---
+
+## 📁 Структура каталога датасета
+
+Датасет формируется в стандартном формате YOLO:
+
+```text
 data/safety_dataset/
   data.yaml
-  images/{train,val,test}/*.jpg
-  labels/{train,val,test}/*.txt
+  images/
+    train/*.jpg
+    val/*.jpg
+    test/*.jpg
+  labels/
+    train/*.txt
+    val/*.txt
+    test/*.txt
 ```
 
-`data.yaml` example (path is relative to the YAML file):
+Пример файла конфигурации `data.yaml`:
 
 ```yaml
 path: .
@@ -24,46 +33,63 @@ test: images/test
 names: [person, helmet, vest]
 ```
 
-YOLO labels: `class_id x_center y_center width height` with normalized
-coordinates. Missing label TXT is allowed for verified negative images.
-**These names are examples, not verified labels for your dataset.**
-For danger-zone-only detection, you can use `names: [person]` and a matching
-one-class checkpoint/training set. Do not pretend COCO labels are PPE labels.
+Разметка меток YOLO: `class_id x_center y_center width height` с нормализованными координатами от 0 до 1. Отсутствие текстового файла метки допускается для верифицированных негативных кадров (без нарушений).
 
-Split by original camera and video before extracting frames. The validator checks
-exact duplicate image bytes across splits, but cannot detect near-duplicate frames
-or camera leakage.
+> [!IMPORTANT]
+> Для сценария контроля опасных зон без проверки СИЗ допустимо использовать одноклассовую конфигурацию `names: [person]`. Категорически запрещено переименовывать классы стандартных COCO-весов под классы СИЗ без фактического дообучения модели на предметном датасете охраны труда.
+> Разделение на train/val/test должно производиться строго по отдельным видеороликам и камерам, чтобы исключить утечку соседних кадров между выборками.
 
-## Setup on a separate GPU training machine
+---
 
-Use Python 3.11/3.12, install a compatible **CUDA-enabled PyTorch** first from
-[PyTorch installation](https://pytorch.org/get-started/locally/), then:
+## 🚀 Настройка и обучение на GPU-машине
 
-```bash
-python -m pip install -r training/requirements.txt
-python -m training.validate_dataset --data data/safety_dataset/data.yaml
-python -m training.train --data data/safety_dataset/data.yaml --weights yolov8s.pt --epochs 100 --imgsz 640 --batch 8 --device 0
-```
+1. Установите Python 3.11/3.12 и совместимый пакет **PyTorch с поддержкой CUDA**:  
+   [Официальный гайд по установке PyTorch](https://pytorch.org/get-started/locally/).
 
-A dry dataset check without torch:
+2. Установите зависимости модуля обучения:
+   ```bash
+   python -m pip install -r training/requirements.txt
+   ```
 
-```bash
-python -m training.train --data data/safety_dataset/data.yaml --check-only
-```
+3. Проведите предварительную валидацию датасета:
+   ```bash
+   python -m training.validate_dataset --data data/safety_dataset/data.yaml
+   ```
 
-The trainer writes `runs/linq/safety*/weights/best.pt` and a manifest.
-Select hyperparameters on validation; run test only after model selection:
+4. Запустите цикл обучения детектора:
+   ```bash
+   python -m training.train --data data/safety_dataset/data.yaml --weights yolov8s.pt --epochs 100 --imgsz 640 --batch 8 --device 0
+   ```
 
-```bash
-python -m training.evaluate_export --weights runs/linq/safety/weights/best.pt --data data/safety_dataset/data.yaml --split val --device 0 --export --out models/onnx/safety_yolov8.onnx
-python -m training.evaluate_export --weights runs/linq/safety/weights/best.pt --data data/safety_dataset/data.yaml --split test --device 0
-```
+5. Быстрая программная проверка пайплайна без обучения:
+   ```bash
+   python -m training.train --data data/safety_dataset/data.yaml --check-only
+   ```
 
-The ONNX export is batch 1 / fixed 640 / raw detect / no NMS. Inspect outputs
-with `python -m linq_tools.inspect_onnx models/onnx/safety_yolov8.onnx`
-before using the existing TPU compilation tool. SDK support for opset 12,
-head operations and quantization must be tested on the actual SDK/device.
+---
 
-Do not commit private training footage, pretrained weights, credentials or
-large binaries to Git. Train on a GPU host; VPN+Jupyter provided for LinQ
-inference is **not confirmed** to provide a GPU training service.
+## 📤 Валидация и экспорт под LinQ TPU
+
+После завершения обучения сохраняются веса `runs/linq/safety*/weights/best.pt` и файл манифеста.
+
+1. Оценка качества на отложенной тестовой выборке и экспорт в ONNX:
+   ```bash
+   python -m training.evaluate_export --weights runs/linq/safety/weights/best.pt --data data/safety_dataset/data.yaml --split val --device 0 --export --out models/onnx/safety_yolov8.onnx
+   python -m training.evaluate_export --weights runs/linq/safety/weights/best.pt --data data/safety_dataset/data.yaml --split test --device 0
+   ```
+
+2. **Требования к экспорту для чипа LinQ TPU**:
+   * Размер пачки (batch): строго **1**;
+   * Входное разрешение: статическое **$1 \times 3 \times 640 \times 640$** (динамические оси `dynamic_axes` запрещены);
+   * Формат выхода: сырой выход детектирующей головы (detect head) без встроенного post-NMS;
+   * Цветовое пространство: RGB, порядок NCHW, нормализация в диапазоне $[0, 1]$.
+
+3. Инспекция экспортированного графа:
+   ```bash
+   python -m linq_tools.inspect_onnx models/onnx/safety_yolov8.onnx --out model_info.json
+   ```
+
+4. Компиляция в формат `.tpu` для ускорителя LinQ H1M:
+   ```bash
+   python -m linq_tools.compile_model --onnx models/onnx/safety_yolov8.onnx --calibration data/calibration --samples 50 --out models/tpu/safety_yolov8_h1m.tpu
+   ```

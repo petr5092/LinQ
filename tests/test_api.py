@@ -259,6 +259,32 @@ class TestLinQApp(unittest.TestCase):
             db.query(Incident).filter(Incident.title == title).delete()
             db.commit()
 
+    def test_12_thermal_heatmap_endpoints(self):
+        """Проверка эндпоинта термограммы /api/v1/thermal/cameras/{id}/heatmap.jpg и интеграции с camera_hub."""
+        matrix = [[20.5 for _ in range(10)] for _ in range(10)]
+        ingest_res = self.client.post(
+            "/api/v1/thermal/cameras/THERMAL-OSF-TEST/frame",
+            json={"temperatures": matrix},
+        )
+        self.assertEqual(ingest_res.status_code, 200)
+
+        # GET /latest
+        latest_res = self.client.get("/api/v1/thermal/cameras/THERMAL-OSF-TEST/latest")
+        self.assertEqual(latest_res.status_code, 200)
+        self.assertIn("heatmap_jpeg_base64", latest_res.json())
+
+        # GET /heatmap.jpg
+        heatmap_res = self.client.get("/api/v1/thermal/cameras/THERMAL-OSF-TEST/heatmap.jpg")
+        self.assertEqual(heatmap_res.status_code, 200)
+        self.assertEqual(heatmap_res.headers.get("content-type"), "image/jpeg")
+        self.assertTrue(heatmap_res.content.startswith(b"\xff\xd8"))
+
+        # GET /cameras/{id}/frame.jpg
+        cam_frame_res = self.client.get("/api/v1/cameras/THERMAL-OSF-TEST/frame.jpg")
+        self.assertEqual(cam_frame_res.status_code, 200)
+        self.assertEqual(cam_frame_res.headers.get("content-type"), "image/jpeg")
+        self.assertTrue(cam_frame_res.content.startswith(b"\xff\xd8"))
+
 
 if __name__ == "__main__":
     unittest.main()

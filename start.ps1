@@ -1,4 +1,4 @@
-# Скрипт быстрого запуска LinQ Safety Guard (Backend + Frontend + Xiaomi Camera Bridge)
+# Скрипт быстрого запуска LenQsec (Backend + Frontend + Xiaomi Camera Bridge)
 param (
     [switch]$Standalone,
     [switch]$WithXiaomiBridge,
@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = $PSScriptRoot
 
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host "         Запуск LinQ Safety Guard [Dev Server]          " -ForegroundColor Cyan
+Write-Host "              Запуск LenQsec [Dev Server]               " -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 
 # 1. Проверка виртуального окружения Python

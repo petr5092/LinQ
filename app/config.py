@@ -36,7 +36,7 @@ ENGINE = {
 
 class Settings(BaseModel):
     # Метаданные приложения
-    PROJECT_NAME: str = "LinQ Safety Guard"
+    PROJECT_NAME: str = "LenQsec"
     VERSION: str = "1.0.0"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = Field(default_factory=lambda: os.getenv("DEBUG", "True").lower() in ("true", "1", "yes"))

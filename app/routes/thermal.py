@@ -12,7 +12,7 @@ import uuid
 import cv2
 import numpy as np
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -157,6 +157,14 @@ async def process_thermal_matrix(
                 "measurements": serializable,
                 "heatmap_jpeg_base64": base64.b64encode(heatmap).decode("ascii"),
             }
+        try:
+            from app.services.camera_hub import camera_hub
+
+            camera_hub.set_frame(camera_id, heatmap)
+            if any(item.get("alarm") for item in serializable):
+                camera_hub.set_violation_frame(camera_id, heatmap)
+        except Exception as hub_exc:
+            log.debug("Failed to push thermal frame to camera_hub: %s", hub_exc)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -254,6 +262,23 @@ def get_latest_thermal_frame(camera_id: str, db: Session = Depends(get_db)):
         if latest is None:
             raise HTTPException(404, "От тепловизора ещё не поступал радиометрический кадр.")
         return latest
+
+
+@router.get("/cameras/{camera_id}/heatmap.jpg")
+def get_latest_thermal_heatmap(camera_id: str, db: Session = Depends(get_db)):
+    """Прямая отдача последнего JPEG-кадра термограммы для веб-интерфейса."""
+    if db.get(Camera, camera_id) is None:
+        raise HTTPException(404, "Камера не найдена.")
+    with _lock:
+        latest = _latest.get(camera_id)
+        if latest is None or not latest.get("heatmap_jpeg_base64"):
+            raise HTTPException(404, "От тепловизора ещё не поступал радиометрический кадр.")
+        content = base64.b64decode(latest["heatmap_jpeg_base64"])
+    return Response(
+        content=content,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 @router.get("/cameras/{camera_id}/readings")
