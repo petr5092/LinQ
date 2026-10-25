@@ -171,6 +171,21 @@ class CVPipeline:
                     except Exception as cb_err:
                         raise RuntimeError(f"Cannot persist or deliver incident {incident.incident_id}") from cb_err
 
+        # Обновление стоп-кадра для длящихся нарушений, чтобы скриншот оставался актуальным (последнего нарушения)
+        if active_incidents and raw_violations:
+            violating_track_ids = {v.track_id for v in raw_violations}
+            for active_inc in active_incidents:
+                if active_inc.track_id in violating_track_ids:
+                    try:
+                        snapshot_url = self.storage.save_snapshot(
+                            image_data=annotated_frame,
+                            incident_id=active_inc.incident_id,
+                            camera_id=cam_id,
+                        )
+                        active_inc.snapshot_path = snapshot_url
+                    except Exception:
+                        pass
+
         # Замеры времени
         t_end = time.perf_counter()
         tot_ms = (t_end - t_start) * 1000.0

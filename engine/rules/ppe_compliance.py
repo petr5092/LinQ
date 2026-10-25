@@ -11,6 +11,12 @@ from engine.rules.base import BaseRule, FrameContext, RuleViolation, ViolationSe
 from engine.tracking.types import TrackedObject
 
 
+DEFAULT_HELMET_CLASSES = ("helmet", "hardhat")
+DEFAULT_NO_HELMET_CLASSES = ("no_helmet", "no-hardhat", "no_hardhat", "no-helmet")
+DEFAULT_VEST_CLASSES = ("vest", "safety vest", "safety_vest")
+DEFAULT_NO_VEST_CLASSES = ("no_vest", "no-safety vest", "no_safety_vest", "no-vest")
+
+
 class PPEComplianceRule(BaseRule):
     """
     Контроль ношения СИЗ (каска, жилет) персоналом на производственной площадке.
@@ -22,10 +28,10 @@ class PPEComplianceRule(BaseRule):
         self,
         require_helmet: bool = True,
         require_vest: bool = True,
-        helmet_class: str = "helmet",
-        no_helmet_class: str = "no_helmet",
-        vest_class: str = "vest",
-        no_vest_class: str = "no_vest",
+        helmet_class: Any = DEFAULT_HELMET_CLASSES,
+        no_helmet_class: Any = DEFAULT_NO_HELMET_CLASSES,
+        vest_class: Any = DEFAULT_VEST_CLASSES,
+        no_vest_class: Any = DEFAULT_NO_VEST_CLASSES,
         severity: ViolationSeverity = ViolationSeverity.HIGH,
         is_enabled: bool = True,
     ) -> None:
@@ -69,13 +75,18 @@ class PPEComplianceRule(BaseRule):
                 torso_inter_area = torso_w * torso_h
                 torso_overlap = (torso_inter_area / max(det.bbox.area, 1.0)) > 0.15 or torso_box.iou(det.bbox) > 0.05
 
-                if det.class_name == self.helmet_class and head_overlap:
+                is_helmet = (det.class_name == self.helmet_class) or (isinstance(self.helmet_class, (set, list, tuple)) and det.class_name in self.helmet_class)
+                is_no_helmet = (det.class_name == self.no_helmet_class) or (isinstance(self.no_helmet_class, (set, list, tuple)) and det.class_name in self.no_helmet_class)
+                is_vest = (det.class_name == self.vest_class) or (isinstance(self.vest_class, (set, list, tuple)) and det.class_name in self.vest_class)
+                is_no_vest = (det.class_name == self.no_vest_class) or (isinstance(self.no_vest_class, (set, list, tuple)) and det.class_name in self.no_vest_class)
+
+                if is_helmet and head_overlap:
                     has_helmet = True
-                elif det.class_name == self.no_helmet_class and head_overlap:
+                elif is_no_helmet and head_overlap:
                     has_explicit_no_helmet = True
-                elif det.class_name == self.vest_class and torso_overlap:
+                elif is_vest and torso_overlap:
                     has_vest = True
-                elif det.class_name == self.no_vest_class and torso_overlap:
+                elif is_no_vest and torso_overlap:
                     has_explicit_no_vest = True
 
             # Нарушение по каске
@@ -121,7 +132,10 @@ class PPEComplianceRule(BaseRule):
             if t.track_id in covered_tracks:
                 continue
 
-            if self.require_helmet and t.class_name == self.no_helmet_class:
+            is_track_no_helmet = (t.class_name == self.no_helmet_class) or (isinstance(self.no_helmet_class, (set, list, tuple)) and t.class_name in self.no_helmet_class)
+            is_track_no_vest = (t.class_name == self.no_vest_class) or (isinstance(self.no_vest_class, (set, list, tuple)) and t.class_name in self.no_vest_class)
+
+            if self.require_helmet and is_track_no_helmet:
                 violations.append(
                     RuleViolation(
                         rule_name=self.name,
@@ -136,7 +150,7 @@ class PPEComplianceRule(BaseRule):
                         metadata={"ppe_type": "helmet", "status": "missing"},
                     )
                 )
-            elif self.require_vest and t.class_name == self.no_vest_class:
+            elif self.require_vest and is_track_no_vest:
                 violations.append(
                     RuleViolation(
                         rule_name=self.name,

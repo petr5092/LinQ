@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
     try:
         from app.services.cv_service import run_cv_camera_worker
         backend_choice = settings.INFERENCE_BACKEND
-        model_choice = settings.ONNX_MODEL_PATH if "onnx" in backend_choice.lower() else settings.TPU_MODEL_PATH
+        model_choice = settings.ONNX_MODEL_PATH if ("onnx" in backend_choice.lower() or "two_stage" in backend_choice.lower() or "cascade" in backend_choice.lower()) else settings.TPU_MODEL_PATH
         cv_thread = threading.Thread(
             target=run_cv_camera_worker,
             args=(
@@ -110,9 +110,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[CV Worker] Ошибка запуска фонового воркера CAM-01: {e}")
 
+    # Фоновый виртуальный симулятор тепловизора
+    thermal_stop_event = asyncio.Event()
+    thermal_sim_task = None
+    if getattr(settings, "ENABLE_THERMAL_SIMULATOR", True):
+        try:
+            from app.services.thermal_simulator import run_thermal_simulator
+            thermal_sim_task = asyncio.create_task(run_thermal_simulator(thermal_stop_event))
+            logger.info("[Thermal Simulator] Фоновый виртуальный симулятор тепловизора успешно запущен.")
+        except Exception as e:
+            logger.warning(f"[Thermal Simulator] Ошибка запуска симулятора тепловизора: {e}")
+
     yield
 
     logger.info("=== Остановка LinQ Safety Guard Backend ===")
+    if thermal_sim_task:
+        thermal_stop_event.set()
+        try:
+            await asyncio.wait_for(thermal_sim_task, timeout=2.0)
+        except Exception:
+            pass
     from app.services.browser_camera import close_browser_camera_pipelines
     close_browser_camera_pipelines()
     try:

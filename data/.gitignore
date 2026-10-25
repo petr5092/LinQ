@@ -1,2 +1,10 @@
 *
 !.gitignore
+
+# Attributed, compact radiometric sample used by the thermal replay utility.
+!thermal/
+thermal/*
+!thermal/osf_sample/
+thermal/osf_sample/*
+!thermal/osf_sample/README.md
+!thermal/osf_sample/Beef_LR_38_20_30.csv

@@ -2,7 +2,7 @@
 inference:
   backend: ONNX_CPU
   onnx_model_path: models/onnx/safety_yolov8.onnx
-  tpu_model_path: models/tpu/safety_yolov8_h1m.tpu
+  tpu_model_path: models/tpu/safety_yolov8n_b1_o1_h1m.tpu
   input_size: [640, 640]
   confidence_threshold: 0.15
   iou_threshold: 0.45

@@ -1,6 +1,6 @@
 """Первичное наполнение базы справочниками площадок, зон и камер."""
 from datetime import datetime
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from app.db.session import SessionLocal
 from app.db.models.site import Site, Workshop, Zone
 from app.db.models.camera import Camera
@@ -11,52 +11,15 @@ SEED_SITES = [
         "name": "Завод «Северный»",
         "subtitle": "Основная площадка",
         "workshops": [
-            {"name": "Корпус А", "zones": ["Цех № 1", "Окрасочный участок"]},
-            {"name": "Корпус Б", "zones": ["Склад", "Погрузочная зона"]},
-            {"name": "Периметр", "zones": ["Проходная", "Периметр", "Высотные работы"]},
-        ],
-    },
-    {
-        "id": "south",
-        "name": "Южная площадка",
-        "subtitle": "Логистический терминал",
-        "workshops": [
-            {"name": "Терминал", "zones": ["Зона разгрузки", "Конвейерная линия"]},
-            {"name": "КПП", "zones": ["Южные ворота", "Парковка"]},
-        ],
-    },
-    {
-        "id": "east",
-        "name": "Восточная площадка",
-        "subtitle": "Строительный участок",
-        "workshops": [
-            {"name": "Монтажный участок", "zones": ["Котлован", "Монтажная зона"]},
-            {"name": "Склад стройматериалов", "zones": ["Склад стройматериалов", "Бытовой городок"]},
+            {"name": "Корпус А", "zones": ["Цех № 1"]},
         ],
     },
 ]
 
 SEED_CAMERAS = [
     {"id": "CAM-01", "name": "Xiaomi 360° 3 Pro (Сборочный участок)", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "construction", "rtsp_url": "rtsp://127.0.0.1:8554/xiaomi_cam", "online": True},
-    {"id": "CAM-02", "name": "Линия сборки", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
-    {"id": "CAM-03", "name": "Участок станков", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
-    {"id": "CAM-04", "name": "Проход между станками", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
-    {"id": "CAM-05", "name": "Зона отдыха", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": True},
-    {"id": "CAM-12", "name": "Межстеллажный проход", "zone": "Склад", "workshop": "Корпус Б", "site_id": "north", "image_placeholder": "warehouse", "online": True},
-    {"id": "CAM-13", "name": "Зона комплектации", "zone": "Склад", "workshop": "Корпус Б", "site_id": "north", "image_placeholder": "warehouse", "online": True},
-    {"id": "CAM-14", "name": "Стеллажи ЛКМ", "zone": "Склад", "workshop": "Корпус Б", "site_id": "north", "image_placeholder": "warehouse", "online": True},
-    {"id": "CAM-16", "name": "Зона отгрузки", "zone": "Погрузочная зона", "workshop": "Корпус Б", "site_id": "north", "image_placeholder": "warehouse", "online": True},
-    {"id": "CAM-17", "name": "Мостовой кран", "zone": "Погрузочная зона", "workshop": "Корпус Б", "site_id": "north", "image_placeholder": "workshop", "online": True},
-    {"id": "CAM-08", "name": "Центральная проходная", "zone": "Проходная", "workshop": "Периметр", "site_id": "north", "image_placeholder": "gate", "online": True},
-    {"id": "CAM-09", "name": "Пост охраны", "zone": "Проходная", "workshop": "Периметр", "site_id": "north", "image_placeholder": "gate", "online": True},
-    {"id": "CAM-21", "name": "Северное ограждение", "zone": "Периметр", "workshop": "Периметр", "site_id": "north", "image_placeholder": "perimeter", "online": True},
-    {"id": "CAM-19", "name": "Монтажная площадка", "zone": "Высотные работы", "workshop": "Периметр", "site_id": "north", "image_placeholder": "workshop", "online": False},
-    {"id": "CAM-31", "name": "Зона разгрузки", "zone": "Зона разгрузки", "workshop": "Терминал", "site_id": "south", "image_placeholder": "warehouse", "online": True},
-    {"id": "CAM-32", "name": "Парковка", "zone": "Парковка", "workshop": "КПП", "site_id": "south", "image_placeholder": "gate", "online": True},
-    {"id": "CAM-33", "name": "Южные ворота", "zone": "Южные ворота", "workshop": "КПП", "site_id": "south", "image_placeholder": "gate", "online": True},
-    {"id": "CAM-41", "name": "Котлован · север", "zone": "Котлован", "workshop": "Монтажный участок", "site_id": "east", "image_placeholder": "perimeter", "online": True},
-    {"id": "CAM-42", "name": "Котлован · ограждение", "zone": "Котлован", "workshop": "Монтажный участок", "site_id": "east", "image_placeholder": "perimeter", "online": True},
-    {"id": "CAM-43", "name": "Бытовой городок", "zone": "Бытовой городок", "workshop": "Склад стройматериалов", "site_id": "east", "image_placeholder": "workshop", "online": True},
+    # Integration/demo radiometric camera. The replay utility sends open CSV frames to it.
+    {"id": "THERMAL-OSF-TEST", "name": "Тепловизор · тест OSF", "zone": "Цех № 1", "workshop": "Корпус А", "site_id": "north", "image_placeholder": "workshop", "online": False, "fps": 1.0, "camera_type": "thermal"},
 ]
 
 def seed_database():
@@ -87,25 +50,38 @@ def seed_database():
             db.commit()
             print("[Seed] Площадки и зоны успешно созданы.")
 
-        # 2. Проверяем наличие камер
-        existing_cameras = db.scalar(select(Camera))
-        if not existing_cameras:
-            print("[Seed] Заполнение базы данных камерами...")
-            for c_data in SEED_CAMERAS:
-                camera = Camera(
-                    id=c_data["id"],
-                    name=c_data["name"],
-                    zone=c_data["zone"],
-                    workshop=c_data["workshop"],
-                    site_id=c_data["site_id"],
-                    image_placeholder=c_data["image_placeholder"],
-                    rtsp_url=c_data.get("rtsp_url"),
-                    online=c_data["online"],
-                    last_heartbeat=datetime.utcnow()
-                )
-                db.add(camera)
+        # 2. Add missing demo cameras without overwriting existing operator settings.
+        # This also makes the radiometric integration visible in databases that
+        # already contain the original visible CAM-01.
+        seed_ids = {c["id"] for c in SEED_CAMERAS}
+        deleted = db.execute(delete(Camera).where(Camera.id.not_in(seed_ids)))
+        if deleted.rowcount:
             db.commit()
-            print("[Seed] Камеры успешно созданы.")
+            print(f"[Seed] Удалены устаревшие тестовые камеры: {deleted.rowcount}")
+
+        added_cameras = False
+        for c_data in SEED_CAMERAS:
+            if db.get(Camera, c_data["id"]):
+                continue
+            if not db.get(Site, c_data["site_id"]):
+                continue
+            db.add(Camera(
+                id=c_data["id"],
+                name=c_data["name"],
+                zone=c_data["zone"],
+                workshop=c_data["workshop"],
+                site_id=c_data["site_id"],
+                image_placeholder=c_data["image_placeholder"],
+                rtsp_url=c_data.get("rtsp_url"),
+                camera_type=c_data.get("camera_type", "visible"),
+                online=c_data["online"],
+                fps=c_data.get("fps", 25.0),
+                last_heartbeat=datetime.utcnow(),
+            ))
+            added_cameras = True
+        if added_cameras:
+            db.commit()
+            print("[Seed] Отсутствующие демонстрационные камеры созданы.")
 
     finally:
         db.close()

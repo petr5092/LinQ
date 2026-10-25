@@ -86,3 +86,14 @@ frontend/dist/
 frontend/public/videos/*
 !frontend/public/videos/.gitkeep
 *.mp4
+
+# Small attributed radiometric sample used by the thermal API replay utility.
+!data/
+data/*
+!data/.gitkeep
+!data/thermal/
+data/thermal/*
+!data/thermal/osf_sample/
+data/thermal/osf_sample/*
+!data/thermal/osf_sample/README.md
+!data/thermal/osf_sample/Beef_LR_38_20_30.csv

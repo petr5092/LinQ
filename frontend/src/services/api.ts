@@ -27,6 +27,19 @@ export interface NotificationSubscriber {
   added_ts?: number | null
 }
 
+export interface DeliveryLogItem {
+  id: number
+  event_id: string
+  channel: string
+  chat_id: string
+  message_id: string | null
+  kind: string | null
+  ok: number
+  error: string | null
+  sent_ts: number | null
+  latency_ms: number | null
+}
+
 export interface NotificationsStatusResponse {
   telegram: TelegramChannelInfo
   netio: {
@@ -34,6 +47,7 @@ export interface NotificationsStatusResponse {
   }
   subscribers: NotificationSubscriber[]
   stats: Record<string, any>
+  deliveries?: DeliveryLogItem[]
 }
 
 export interface AnalyticsSummary {
@@ -123,6 +137,7 @@ interface BackendIncident {
   video?: string
   status: EventStatus
   box?: number[]
+  confidence?: number
   employee?: BackendEmployee
   contact?: BackendContact
   employee_name?: string
@@ -145,6 +160,42 @@ interface BackendCamera {
   rtsp_url?: string
   video?: string
   online?: boolean
+  camera_type?: 'visible' | 'thermal'
+}
+
+export interface ThermalMeasurement {
+  zone_id: string
+  zone_name: string
+  roi: [number, number, number, number]
+  min_temperature_c: number
+  mean_temperature_c: number
+  max_temperature_c: number
+  hot_pixels: number
+  threshold_c: number
+  alarm: boolean
+  severity: Severity
+}
+
+export interface ThermalLatestFrame {
+  camera_id: string
+  captured_at: string
+  width: number
+  height: number
+  minimum_temperature_c: number
+  maximum_temperature_c: number
+  measurements: ThermalMeasurement[]
+  heatmap_jpeg_base64: string
+}
+
+export interface ThermalReading {
+  zone_id: string
+  captured_at: string
+  min_temperature_c: number
+  mean_temperature_c: number
+  max_temperature_c: number
+  threshold_c: number
+  hot_pixels: number
+  alarm: boolean
 }
 
 interface BackendZone {
@@ -214,6 +265,7 @@ export function mapBackendIncidentToSafetyEvent(item: BackendIncident): SafetyEv
     },
     status: item.status,
     box: Array.isArray(item.box) && item.box.length === 4 ? (item.box as [number, number, number, number]) : [0, 0, 0, 0],
+    confidence: typeof item.confidence === 'number' ? item.confidence : undefined,
   }
 }
 
@@ -228,6 +280,7 @@ export function mapBackendCameraToCamera(item: BackendCamera): Camera {
     video: item.rtsp_url || item.video || (item.id === 'CAM-01' ? '/videos/construction_safety.mp4' : undefined),
     event: item.id === 'CAM-01' ? 'TK-1048' : undefined,
     online: item.online ?? true,
+    cameraType: item.camera_type ?? 'visible',
   }
 }
 
@@ -284,6 +337,20 @@ export const api = {
 
   async getAnalyticsSummary(siteId: string): Promise<AnalyticsSummary> {
     const res = await fetch(`${API_BASE}/analytics/summary?site_id=${encodeURIComponent(siteId)}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+
+  async getLatestThermalFrame(cameraId: string): Promise<ThermalLatestFrame> {
+    const res = await fetch(`${API_BASE}/thermal/cameras/${encodeURIComponent(cameraId)}/latest`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  },
+
+  async getThermalReadings(cameraId: string, zoneId?: string): Promise<ThermalReading[]> {
+    const params = new URLSearchParams({ limit: '120' })
+    if (zoneId) params.set('zone_id', zoneId)
+    const res = await fetch(`${API_BASE}/thermal/cameras/${encodeURIComponent(cameraId)}/readings?${params}`, { cache: 'no-store' })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
@@ -392,6 +459,9 @@ export const api = {
               else onNewIncident(incident)
             } else if ((payload.event === 'INCIDENT_STATUS_UPDATED' || payload.event === 'INCIDENT_STATUS_CHANGED') && payload.data && payload.data.status) {
               onStatusUpdate(payload.data.id, payload.data.status)
+              if (payload.data.title && onIncidentUpdated) {
+                onIncidentUpdated(mapBackendIncidentToSafetyEvent(payload.data))
+              }
             }
           } catch {
             // Ignore non-json
@@ -460,6 +530,50 @@ export const api = {
       return res.ok
     } catch {
       return false
+    }
+  },
+
+  async syncTelegramAlerts(): Promise<{ ok: boolean; synced_count: number }> {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/sync`, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return (await res.json()) as { ok: boolean; synced_count: number }
+    } catch {
+      return { ok: false, synced_count: 0 }
+    }
+  },
+
+  async getNotificationZoneRules(): Promise<Record<string, boolean>> {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/rules`)
+      if (!res.ok) return {}
+      const data = await res.json()
+      return data?.rules ?? {}
+    } catch {
+      return {}
+    }
+  },
+
+  async setNotificationZoneRule(zone: string, rule: string, enabled: boolean): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/rules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone, rule, enabled }),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  },
+
+  async getDeliveries(limit = 50, failedOnly = false): Promise<DeliveryLogItem[]> {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/deliveries?limit=${limit}&failed_only=${failedOnly}`)
+      if (!res.ok) return []
+      return (await res.json()) as DeliveryLogItem[]
+    } catch {
+      return []
     }
   },
 

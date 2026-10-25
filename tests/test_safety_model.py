@@ -27,9 +27,11 @@ def test_classes_mapping_contains_safety_categories():
         mapping = json.load(f)
 
     class_names = set(mapping.values())
-    required_classes = {"person", "helmet", "no_helmet", "vest", "no_vest"}
-    for rc in required_classes:
-        assert rc in class_names, f"Обязательный класс '{rc}' отсутствует в маппинге модели: {class_names}"
+    assert "person" in class_names, "Класс 'person' отсутствует в маппинге модели"
+    assert any(c in class_names for c in ("helmet", "hardhat")), "Класс каски ('helmet'/'hardhat') отсутствует"
+    assert any(c in class_names for c in ("no_helmet", "no-hardhat")), "Класс отсутствия каски отсутствует"
+    assert any(c in class_names for c in ("vest", "safety vest")), "Класс жилета ('vest'/'safety vest') отсутствует"
+    assert any(c in class_names for c in ("no_vest", "no-safety vest")), "Класс отсутствия жилета отсутствует"
 
 
 def test_local_onnx_engine_inference_with_safety_model():

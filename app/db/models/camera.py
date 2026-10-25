@@ -17,6 +17,7 @@ class Camera(Base, TimestampMixin):
         String(50), ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True
     )
     rtsp_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    camera_type: Mapped[str] = mapped_column(String(20), default="visible", nullable=False)
     image_placeholder: Mapped[str] = mapped_column(String(50), default="workshop")
     online: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     fps: Mapped[Optional[float]] = mapped_column(Float, default=25.0)

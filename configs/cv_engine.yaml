@@ -4,7 +4,7 @@
 inference:
   # Варианты: LINQ_TPU (чип H1M), ONNX_CPU (локальный фоллбэк), MOCK (тестирование)
   backend: "ONNX_CPU"
-  tpu_model_path: "models/tpu/safety_yolov8_h1m.tpu"
+  tpu_model_path: "models/tpu/safety_yolov8n_b1_o1_h1m.tpu"
   onnx_model_path: "models/onnx/safety_yolov8.onnx"
   input_size: [640, 640]
   confidence_threshold: 0.15  # Preserve low-score detections for ByteTrack; new tracks require 0.45
@@ -47,7 +47,7 @@ rules:
 deduplication:
   debounce_frames: 10      # Количество кадров подтверждения нарушения (~0.4 сек)
   debounce_seconds: 1.5    # Both frame and elapsed-time confirmation must pass
-  cooldown_seconds: 300.0   # Подавление повторных оповещений на 5 минут
+  cooldown_seconds: 20.0    # Интервал повторных оповещений между эпизодами нарушения (20 сек)
   resolve_frames: 25        # Кадров отсутствия нарушения для закрытия инцидента
 
 cameras:

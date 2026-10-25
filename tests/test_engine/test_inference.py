@@ -160,3 +160,43 @@ def test_local_onnx_engine_full_infer_with_mock_session():
     assert res.detections[0].class_name == "person"
     assert res.metrics.backend_name == "ONNX_CPU"
     assert res.metrics.fps > 0.0
+
+
+def test_two_stage_ppe_engine_creation_and_fusion():
+    """Проверка фабрики и слияния детекций человека и СИЗ в TwoStagePPEEngine."""
+    from engine.inference.two_stage import TwoStagePPEEngine
+
+    with patch("os.path.isfile", return_value=True), \
+         patch("engine.inference.two_stage.LocalONNXEngine") as mock_onnx_cls:
+        # Мокируем safety engine и person engine
+        mock_safety = MagicMock()
+        mock_safety.is_loaded = True
+        mock_safety.class_names = {0: "hardhat", 1: "safety vest"}
+        mock_safety.infer.return_value = InferenceResult(
+            detections=[Detection(BoundingBox(10, 10, 50, 50), 0.9, 0, "hardhat")],
+            metrics=InferenceMetrics(backend_name="ONNX_CPU", preprocess_time_ms=2.0, postprocess_time_ms=1.0),
+        )
+
+        mock_person = MagicMock()
+        mock_person.is_loaded = True
+        mock_person.class_names = {0: "person"}
+        mock_person.infer.return_value = InferenceResult(
+            detections=[Detection(BoundingBox(0, 0, 100, 200), 0.95, 0, "person")],
+            metrics=InferenceMetrics(backend_name="ONNX_CPU"),
+        )
+
+        mock_onnx_cls.side_effect = [mock_safety, mock_person]
+
+        engine = create_inference_engine(backend="TWO_STAGE")
+        assert isinstance(engine, TwoStagePPEEngine)
+        assert engine.backend_name == "TWO_STAGE_PPE"
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        result = engine.infer(frame)
+
+        assert len(result.detections) == 2
+        classes = {d.class_name for d in result.detections}
+        assert "person" in classes
+        assert "hardhat" in classes
+        assert result.metrics.backend_name == "TWO_STAGE_PPE"
+

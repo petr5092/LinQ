@@ -2,6 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import './prototype.css'
+import './thermal.css'
+import './traffic_light.css'
 import App from './App'
 import { TooltipProvider } from '@/components/ui/tooltip'
 document.documentElement.classList.remove('dark')

@@ -1,0 +1,133 @@
+.camera-view {
+  position: relative;
+}
+
+.thermal-heatmap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #111;
+}
+
+.thermal-measurements {
+  position: absolute;
+  z-index: 3;
+  top: 42px;
+  left: 12px;
+  display: grid;
+  gap: 6px;
+  max-width: min(80%, 340px);
+}
+
+.thermal-reading {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid #ffffff30;
+  border-radius: 7px;
+  color: #fff;
+  background: #10151dcc;
+  font-size: 11px;
+  backdrop-filter: blur(8px);
+}
+
+.thermal-reading.alarm {
+  border-color: #ff654d;
+  background: #651e1ddd;
+}
+
+.thermal-reading span {
+  color: #f2f2f2;
+  font-variant-numeric: tabular-nums;
+}
+
+.thermal-scale {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: #fff;
+  background: #10151dcc;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.thermal-scale i {
+  width: 72px;
+  height: 8px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #160b39, #4b0c6b, #a52c60, #ed6925, #fcffa4);
+}
+
+.thermal-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 20px;
+  color: #fff;
+  text-align: center;
+  background: #111827;
+}
+
+.thermal-empty span {
+  max-width: 280px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.thermal-history {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 42px;
+  width: min(42%, 260px);
+  height: 96px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid #ffffff30;
+  border-radius: 7px;
+  color: #fff;
+  background: #10151dcc;
+  font-size: 10px;
+  backdrop-filter: blur(8px);
+}
+
+.thermal-history svg {
+  width: 100%;
+  min-height: 0;
+  overflow: visible;
+}
+
+.thermal-history polyline {
+  fill: none;
+  stroke: #ffc857;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.thermal-history line {
+  stroke: #ff654d;
+  stroke-dasharray: 3 2;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.thermal-history small {
+  display: flex;
+  justify-content: space-between;
+  color: #cbd5e1;
+  font-variant-numeric: tabular-nums;
+}

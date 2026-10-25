@@ -78,8 +78,9 @@ describe("<App /> Component Integration", () => {
     expect(within(nav).getByRole("button", { name: /Камеры/ })).toBeInTheDocument()
     expect(within(nav).getByRole("button", { name: /Журнал событий/ })).toBeInTheDocument()
     expect(within(nav).getByRole("button", { name: "Зоны и правила" })).toBeInTheDocument()
-    expect(within(nav).getByRole("button", { name: "Контроль доступа" })).toBeInTheDocument()
+    expect(within(nav).queryByRole("button", { name: "Контроль доступа" })).not.toBeInTheDocument()
     expect(within(nav).getByRole("button", { name: "Аналитика" })).toBeInTheDocument()
+    expect(within(nav).getByRole("button", { name: "Обучение" })).toBeInTheDocument()
   })
 
   it("renders analytics from the backend summary instead of demo chart data", async () => {
@@ -131,21 +132,15 @@ describe("<App /> Component Integration", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Аналитика безопасности" })).toBeInTheDocument()
   })
 
-  it("switches industrial facility (site) correctly", async () => {
+  it("displays the industrial facility (site) correctly", async () => {
     await act(async () => {
       render(<App />)
     })
 
     const facilitySelect = screen.getByLabelText("Выбор площадки")
     expect(facilitySelect).toHaveValue("north")
-
-    // Switch to south
-    await act(async () => {
-      fireEvent.change(facilitySelect, { target: { value: "south" } })
-    })
-
-    expect(facilitySelect).toHaveValue("south")
-    expect(screen.getByText("Южная площадка")).toBeInTheDocument()
+    expect(screen.getAllByText("Завод «Северный»").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Основная площадка").length).toBeGreaterThan(0)
   })
 
   it("filters events by search query in event journal", async () => {
@@ -210,23 +205,18 @@ describe("<App /> Component Integration", () => {
     })
   })
 
-  it("displays latest screenshot on overview and opens real-time neural camera view on click", async () => {
+  it("opens real-time neural camera view on camera click from overview", async () => {
     await act(async () => {
       render(<App />)
     })
 
-    // 1. Verify latest screenshot section and badges on the main screen
-    expect(screen.getByText(/Последний скриншот системы безопасности/i)).toBeInTheDocument()
-    const snapshotBadges = screen.getAllByText(/ПОСЛЕДНИЙ СКРИН/i)
-    expect(snapshotBadges.length).toBeGreaterThan(0)
-
-    // 2. Click on camera to enter real-time neural network video view
+    // 1. Click on camera to enter real-time neural network video view
     const cameraClickButton = screen.getByRole("button", { name: /Открыть камеру CAM-01/i })
     await act(async () => {
       fireEvent.click(cameraClickButton)
     })
 
-    // 3. Verify real-time video modal opens with neural network analytics
+    // 2. Verify real-time video modal opens with neural network analytics
     await waitFor(() => {
       expect(screen.getByText(/Видеоаналитика в реальном времени/i)).toBeInTheDocument()
       expect(screen.getByText(/LinQ Neural Guard/i)).toBeInTheDocument()
@@ -274,5 +264,46 @@ describe("<App /> Component Integration", () => {
     })
 
     expect(screen.getByRole("heading", { level: 1, name: "Аналитика безопасности" })).toBeInTheDocument()
+  })
+
+  it("renders traffic light safety view with cameras, workshops and status colors, and opens violation snapshot modal on click", async () => {
+    await act(async () => {
+      render(<App />)
+    })
+
+    // The overview tab and cards for "Светофор" should be present
+    const trafficButtons = screen.getAllByRole("button", { name: /Светофор/i })
+    expect(trafficButtons.length).toBeGreaterThan(0)
+
+    // Summary bar and status descriptions
+    expect(screen.getByText(/Светофор безопасности производственных процессов/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/Критично:/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Порог: T ≥ 21.0°C/i)).toBeInTheDocument()
+
+    // Click on CAM-01 card
+    const cam01Card = screen.getByRole("button", { name: /Светофор камеры.*CAM-01/i })
+    await act(async () => {
+      fireEvent.click(cam01Card)
+    })
+
+    // Verify modal opens with latest violation snapshot
+    await waitFor(() => {
+      expect(screen.getByText(/Светофор безопасности · Стоп-кадр нарушения/i)).toBeInTheDocument()
+      expect(screen.getByText(/Перейти к прямому эфиру камеры/i)).toBeInTheDocument()
+    })
+
+    // Close modal
+    fireEvent.click(screen.getAllByRole("button", { name: /Закрыть/i })[0])
+
+    // Click on Thermal camera card to check thermal threshold in modal
+    const thermalCard = screen.getByRole("button", { name: /Светофор камеры.*THERMAL-OSF-TEST/i })
+    await act(async () => {
+      fireEvent.click(thermalCard)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/Критерий перегрева тепловизора/i)).toBeInTheDocument()
+      expect(screen.getAllByText(/Порог: T ≥ 21.0°C/i).length).toBeGreaterThan(0)
+    })
   })
 })

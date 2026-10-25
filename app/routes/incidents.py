@@ -191,6 +191,10 @@ async def change_incident_status(
     })
 
     # Обновляем статус в Telegram-сообщениях
-    notification_manager.update_incident_status(incident_id, update_data.status)
+    notification_manager.update_incident_status(
+        incident_id,
+        update_data.status,
+        getattr(update_data, "operator_name", None),
+    )
 
     return updated

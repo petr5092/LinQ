@@ -62,7 +62,18 @@ class LocalONNXEngine(BaseInferenceEngine):
             except (ValueError, SyntaxError, TypeError) as exc:
                 raise ValueError("Invalid 'names' metadata in ONNX model.") from exc
             if class_names and class_names != model_names:
-                raise ValueError("Configured class_names disagree with ONNX names metadata; check the trained model.")
+                def _norm(name: str) -> str:
+                    n = str(name).lower().replace("-", "_").replace(" ", "_")
+                    aliases = {
+                        "hardhat": "helmet",
+                        "no_hardhat": "no_helmet",
+                        "safety_vest": "vest",
+                        "no_safety_vest": "no_vest",
+                    }
+                    return aliases.get(n, n)
+
+                if {k: _norm(v) for k, v in class_names.items()} != {k: _norm(v) for k, v in model_names.items()}:
+                    raise ValueError("Configured class_names disagree with ONNX names metadata; check the trained model.")
             class_names = model_names
         if not class_names:
             raise ValueError("ONNX model has no class names; supply the complete class_names mapping.")

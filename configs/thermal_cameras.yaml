@@ -1,0 +1,30 @@
+# Numeric-temperature camera configuration. Register each production camera in the app first.
+# Replace the example ID, ROI and limits with values for the installed camera/process.
+cameras:
+  THERMAL-OSF-TEST:
+    sample_history_seconds: 5
+    retention_days: 90
+    zones:
+      - zone_id: osf_sample_full_frame
+        name: Тестовая область OSF
+        roi: [0, 0, 1, 1]
+        max_temperature_c: 21
+        clear_temperature_c: 20
+        min_hot_pixels: 1
+        min_frames: 3
+        severity: warning
+        action: Тестовый инцидент из открытого CSV; проверять оборудование не требуется.
+  THERMAL-01:
+    sample_history_seconds: 5
+    retention_days: 90
+    zones:
+      - zone_id: motor_bearing
+        name: Подшипник двигателя
+        # Normalized [x1, y1, x2, y2] coordinates in the radiometric frame.
+        roi: [0.35, 0.25, 0.65, 0.75]
+        max_temperature_c: 85
+        clear_temperature_c: 80
+        min_hot_pixels: 3
+        min_frames: 3
+        severity: critical
+        action: Проверьте подшипник и остановите оборудование при подтверждении перегрева.

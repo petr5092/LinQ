@@ -61,6 +61,15 @@ class NotificationStore:
                 latency_ms REAL
             );
             CREATE INDEX IF NOT EXISTS ix_del_ev ON deliveries(event_id);
+            CREATE TABLE IF NOT EXISTS zone_notification_rules(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                zone TEXT NOT NULL,
+                rule TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1,
+                updated_ts REAL,
+                UNIQUE(zone, rule)
+            );
+            CREATE INDEX IF NOT EXISTS ix_zone_rule ON zone_notification_rules(zone, rule);
             """)
             conn.commit()
 
@@ -186,6 +195,25 @@ class NotificationStore:
             (str(event_id),),
         )
 
+    def list_deliveries(
+        self,
+        limit: int = 50,
+        failed_only: bool = False,
+        channel: Optional[str] = None,
+    ) -> List[dict]:
+        where, args = [], []
+        if failed_only:
+            where.append("ok = 0")
+        if channel:
+            where.append("channel = ?")
+            args.append(channel)
+
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        return self._rows(
+            f"SELECT * FROM deliveries{clause} ORDER BY id DESC LIMIT ?",
+            tuple(args) + (limit,),
+        )
+
     def delivery_stats(self) -> dict:
         stats: Dict[str, dict] = {}
         for row in self._rows(
@@ -199,3 +227,48 @@ class NotificationStore:
             else:
                 sub["failed"] = row["cnt"]
         return stats
+
+    def get_zone_rules(self) -> dict:
+        """Возвращает матрицу правил по зонам: {'rules': {key: bool}, 'items': [...]}."""
+        rows = self._rows("SELECT zone, rule, enabled, updated_ts FROM zone_notification_rules")
+        rules_map: Dict[str, bool] = {}
+        items: List[dict] = []
+        for r in rows:
+            is_en = bool(r["enabled"])
+            # Поддерживаем и составной ключ z + rule (для интерфейса), и z::rule
+            rules_map[f"{r['zone']}{r['rule']}"] = is_en
+            rules_map[f"{r['zone']}::{r['rule']}"] = is_en
+            items.append({
+                "zone": r["zone"],
+                "rule": r["rule"],
+                "enabled": is_en,
+                "updated_ts": r["updated_ts"],
+            })
+        return {"rules": rules_map, "items": items}
+
+    def set_zone_rule(self, zone: str, rule: str, enabled: bool) -> None:
+        """Включение или отключение уведомлений для правила в зоне."""
+        now = time.time()
+        val = 1 if enabled else 0
+        with self.lock, self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO zone_notification_rules(zone, rule, enabled, updated_ts)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(zone, rule) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    updated_ts = excluded.updated_ts
+                """,
+                (zone.strip(), rule.strip(), val, now),
+            )
+            conn.commit()
+
+    def is_notification_enabled_for_zone(self, zone: str, rule: str) -> bool:
+        """Проверка, включены ли оповещения для данного правила в указанной зоне."""
+        rows = self._rows(
+            "SELECT enabled FROM zone_notification_rules WHERE zone = ? AND rule = ?",
+            (zone.strip(), rule.strip()),
+        )
+        if not rows:
+            return True  # По умолчанию включено
+        return bool(rows[0]["enabled"])

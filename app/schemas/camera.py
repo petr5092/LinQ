@@ -9,6 +9,7 @@ class CameraBase(BaseModel):
     workshop: str = Field(..., max_length=100, description="Цех / корпус")
     site_id: str = Field(..., max_length=50, description="ID площадки (north/south/east)")
     rtsp_url: Optional[str] = Field(None, description="RTSP видеопоток")
+    camera_type: str = Field("visible", pattern="^(visible|thermal)$", description="visible | thermal")
     image_placeholder: str = Field("workshop", description="Тип ракурса/фонового изображения")
     online: bool = Field(True, description="Статус подключения камеры")
     fps: Optional[float] = Field(25.0, description="Частота кадров")
@@ -23,6 +24,7 @@ class CameraUpdate(BaseModel):
     zone: Optional[str] = None
     workshop: Optional[str] = None
     rtsp_url: Optional[str] = None
+    camera_type: Optional[str] = Field(None, pattern="^(visible|thermal)$")
     image_placeholder: Optional[str] = None
     online: Optional[bool] = None
     fps: Optional[float] = None

@@ -56,6 +56,7 @@ class IncidentCreate(IncidentBase):
 class IncidentUpdateStatus(BaseModel):
     status: str = Field(..., description="new | working | resolved | dismissed")
     comment: Optional[str] = None
+    operator_name: Optional[str] = None
 
 
 class IncidentRead(IncidentBase):

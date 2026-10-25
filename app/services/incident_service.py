@@ -1,3 +1,4 @@
+import os
 import uuid
 from datetime import datetime
 from typing import List, Optional, Tuple
@@ -14,7 +15,7 @@ from app.schemas.incident import (
 )
 from app.storage.base import BaseStorageProvider
 
-INCIDENT_MERGE_WINDOW_SECONDS = 300
+INCIDENT_MERGE_WINDOW_SECONDS = int(os.getenv("COOLDOWN_SECONDS", "20"))
 
 
 def _database_local_now(db: Session) -> datetime:
